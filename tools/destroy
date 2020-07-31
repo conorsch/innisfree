@@ -1,0 +1,9 @@
+#!/bin/bash
+set -e
+set -u
+set -o pipefail
+
+
+
+doctl compute droplet list innisfree --no-header --format ID \
+          | xargs -r -n1 doctl compute droplet delete -f
