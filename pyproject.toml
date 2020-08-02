@@ -14,6 +14,8 @@ pip = "^20.2"
 "ruamel.yaml" = "^0.16.10"
 requests = "^2.24.0"
 configargparse = "^1.2.3"
+kopf = "^0.27"
+kubernetes = "^11.0.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"

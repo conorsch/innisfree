@@ -1,0 +1,12 @@
+Source: innisfree
+Section: python
+Priority: extra
+Maintainer: Conor Schaefer <conor.schaefer@gmail.com>
+Build-Depends: debhelper (>= 9), python3, dh-virtualenv (>= 0.8)
+Standards-Version: 3.9.5
+
+Package: innisfree
+Architecture: any
+Pre-Depends: dpkg (>= 1.16.1), ${misc:Pre-Depends}
+Depends: ${python3:Depends}, ${misc:Depends}
+Description: Manages TCP tunnels for forwarding k8s traffic behind NAT

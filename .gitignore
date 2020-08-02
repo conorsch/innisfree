@@ -1,0 +1,12 @@
+*.tar.gz
+*.whl
+*egg-info/
+dist/
+*.deb
+
+debian/.debhelper/
+debian/*.debhelper.log
+debian/*.postinst.debhelper
+debian/*.substvars
+debian/*/
+debian/files

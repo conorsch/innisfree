@@ -85,6 +85,8 @@ class InnisfreeManager:
             "-i",
             str(self.server.client_keypair.filepath),
             "-o",
+            f"UserKnownHostsFile={self.known_hosts}",
+            "-o",
             "ExitOnForwardFailure=yes",
             "-N",
             "-R",
@@ -102,6 +104,7 @@ class InnisfreeManager:
         Ensures that tunnel remains open. If it disconnects,
         tries to re-establish the connection. Checks every ``interval`` seconds.
         """
+        time.sleep(interval)
         while self.tunnel_process.poll() is None:
             logger.debug("Tunnel appears healthy")
             time.sleep(interval)
