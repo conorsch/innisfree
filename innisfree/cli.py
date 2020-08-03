@@ -5,8 +5,6 @@ import os
 
 from .utils import logger
 from .innisfree import InnisfreeManager
-import kopf
-from .operator import create_fn
 
 
 def parse_args():
@@ -21,7 +19,7 @@ def parse_args():
     parser.add_argument(
         "--local-port",
         action="store",
-        default="8000",
+        default="8080",
         env_var="INNISFREE_LOCAL_PORT",
         help="Port of local service to expose",
     )
@@ -56,16 +54,13 @@ def main() -> int:
     except requests.exceptions.ConnectionError:
         logger.warning(f"Service unreachable: {dest_service}")
 
-    try:
-        do_api_token = os.environ["DIGITALOCEAN_API_TOKEN"]
-    except KeyError:
+    if "DIGITALOCEAN_API_TOKEN" not in os.environ:
         logger.error("DIGITALOCEAN_API_TOKEN env var not found")
         return 1
 
-    if args.operator:
-        kopf.run()
-
-    mgr = InnisfreeManager()
+    mgr = InnisfreeManager(
+        proxy_address=args.proxy_address, local_port=args.local_port, remote_port=args.remote_port,
+    )
     try:
         mgr.open_tunnel()
     except Exception as e:
@@ -83,6 +78,7 @@ def main() -> int:
         msg = "Tunnel failed unexpectedly: {}".format(e)
         logger.error(msg)
         return 3
+
     return 0
 
 

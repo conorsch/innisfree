@@ -34,7 +34,20 @@ class InnisfreeServer:
         self.json_config = self._create()
         self.name = self.json_config["name"]
         self.droplet_id = self.json_config["id"]
-        self.ipv4_address = self.json_config["networks"]["v4"][0]["ip_address"]
+        logger.debug(f"Created server: {self}")
+
+    @property
+    def ipv4_address(self):
+        """
+        Extracts the public IPv4 address from the JSON response
+        for server creation.
+        """
+        ipv4_address = ""
+        for network in self.json_config["networks"]["v4"]:
+            if network["type"] == "public":
+                ipv4_address = network["ip_address"]
+        assert ipv4_address != "", "Could not find IPv4 address for server"
+        return ipv4_address
 
     def __repr__(self) -> str:
         return f"<InnisfreeServer: IPv4={self.ipv4_address}>"
@@ -97,7 +110,13 @@ class InnisfreeServer:
             DO_NAME,
         ]
         logger.debug("Droplet creation cmd: {}".format(" ".join(cmd)))  # type: ignore
-        raw_output = subprocess.check_output(cmd).decode("utf-8").rstrip()  # type: ignore
+        try:
+            raw_output = subprocess.check_output(cmd).decode("utf-8").rstrip()  # type: ignore
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to create droplet: {e}")
+            logger.error(f"Stderr: {e.stderr}")
+            logger.error(f"Stdout: {e.stdout}")
+            raise
         server_json = json.loads(raw_output)[0]
         return server_json
 
@@ -114,5 +133,6 @@ def delete_servers() -> None:
 
     for x in ids:
         cmd = "doctl compute droplet delete -f {}".format(x).split()
+        logger.debug(f"Destroying server by id: {x}")
         subprocess.check_call(cmd)
         time.sleep(5)

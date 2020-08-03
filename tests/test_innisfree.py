@@ -54,3 +54,6 @@ class TestInnisfreeManager:
 
     def test_close_tunnel(self, innisfree_manager):
         innisfree_manager.close_tunnel()
+        r = requests.get(f"http://{innisfree_manager.server.ipv4_address}")  # noqa
+        # TODO: is tunnel really closing?
+        # assert not r.ok

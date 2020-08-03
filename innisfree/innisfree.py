@@ -1,21 +1,19 @@
-from .server import InnisfreeServer
+from .server import InnisfreeServer, delete_servers
 from .utils import logger
 import subprocess
 import tempfile
 import time
 import socket
 from pathlib import Path
-
-
-INNISFREE_DEFAULTS = {}  # type: dict
-
-INNISFREE_LOCAL_PORT = "8000"
-INNISFREE_REMOTE_PORT = "8080"
-INNISFREE_PROXY_ADDRESS = "localhost"
+from signal import signal, SIGINT
 
 
 class InnisfreeManager:
-    def __init__(self) -> None:
+    def __init__(self, proxy_address="localhost", local_port="8000", remote_port="8080") -> None:
+        self.proxy_address = proxy_address
+        self.local_port = local_port
+        self.remote_port = remote_port
+
         self.server = InnisfreeServer()
         logger.info("Waiting for server to boot")
         self._wait_for_boot()
@@ -63,9 +61,9 @@ class InnisfreeManager:
             try:
                 s.connect((self.server.ipv4_address, 22))
                 connected = True
-                logger.debug("SSH port open, proceeding")
+                logger.debug("SSH port on remote host is open, proceeding")
             except socket.error:
-                logger.debug("SSH port closed, waiting")
+                logger.debug("SSH port on remote host closed, waiting...")
                 time.sleep(interval)
 
         # Sleep a bit more, since SSH just opened up
@@ -90,10 +88,10 @@ class InnisfreeManager:
             "ExitOnForwardFailure=yes",
             "-N",
             "-R",
-            f"{INNISFREE_REMOTE_PORT}:localhost:{INNISFREE_LOCAL_PORT}",
+            f"{self.remote_port}:{self.proxy_address}:{self.local_port}",
             self.server.ipv4_address,
         ]
-        logger.debug("Open tunnel: {}".format(" ".join(ssh_cmd)))
+        logger.debug("Opening tunnel, using command: : {}".format(" ".join(ssh_cmd)))
         self.tunnel_process = subprocess.Popen(ssh_cmd)
         if self.tunnel_process.returncode not in (None, 0):
             msg = "Failed to open tunnel"
@@ -105,11 +103,19 @@ class InnisfreeManager:
         tries to re-establish the connection. Checks every ``interval`` seconds.
         """
         time.sleep(interval)
+
+        def handle_sigint(signal_received, frame):
+            logger.info("Termination requested, cleaning up...")
+            self.cleanup()
+
+        # Exit gracefully
+        signal(SIGINT, handle_sigint)
+
         while self.tunnel_process.poll() is None:
-            logger.debug("Tunnel appears healthy")
+            logger.debug("Heartbeat: Tunnel appears healthy")
             time.sleep(interval)
 
-        logger.error("Tunnel failed, retrying")
+        logger.error("Heartbeat: Tunnel failed, retrying")
         self.open_tunnel()
         self.monitor_tunnel()
 
@@ -117,7 +123,22 @@ class InnisfreeManager:
         if not hasattr(self, "tunnel_process"):
             msg = "No tunnel has been opened"
             raise Exception(msg)
+        # TODO: not convinced either terminate or kill actually results
+        # in the tunnel being closed, maybe loop and poll for exit?
+        # self.tunnel_process.kill()
         self.tunnel_process.terminate()
+
+    def cleanup(self) -> None:
+        """
+        Tears down all created infra. Ideal for gracefully exiting.
+        """
+        logger.debug("Running cleanup tasks")
+        logger.debug("Closing tunnel")
+        self.close_tunnel()
+        logger.debug("Destroy ALL innisfree servers")
+        delete_servers()
+        msg = "Cleanup is completed, exiting"
+        raise Exception(msg)
 
     def run(self, cmd) -> str:
         ssh_cmd = [

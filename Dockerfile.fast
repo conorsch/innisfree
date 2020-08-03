@@ -1,0 +1,24 @@
+# Grab doctl from upstream container.
+# Should be using a pure python API, too lazy right now
+ARG DOCTL_VERSION=1.46.0
+FROM digitalocean/doctl:${DOCTL_VERSION} AS doctl
+
+# Final container: copy in doctl & innisfree pkg, install
+FROM python:buster
+ARG UID=1000
+ARG GID=1000
+ARG USERNAME=user
+
+RUN groupadd -g ${GID} ${USERNAME} && useradd -m -d /home/${USERNAME} -g ${GID} -u ${UID} ${USERNAME}
+COPY --from=doctl /app/doctl /usr/bin/doctl
+RUN apt-get update
+RUN apt-get install -y python3-dev python3-pip
+RUN apt-get install -y openssh-client
+
+COPY . /code
+WORKDIR /code
+RUN pip install .
+
+
+USER ${USERNAME}
+CMD ["/usr/bin/innisfree"]

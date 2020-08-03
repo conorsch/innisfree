@@ -21,7 +21,7 @@ clean:
 
 .PHONY: docker
 docker:
-	docker build . -t docker.ruin.dev/innisfree
+	docker build . -f Dockerfile.fast -t docker.ruin.dev/innisfree
 	docker push docker.ruin.dev/innisfree
 
 .PHONY: deb
