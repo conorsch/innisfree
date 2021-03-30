@@ -11,6 +11,7 @@ FROM debian:buster AS builder
 RUN apt-get update && apt-get upgrade -y
 RUN apt-get install -y dh-virtualenv python3-dev make git build-essential debhelper devscripts equivs
 
+
 # Build that deb pkg!
 COPY . /code
 WORKDIR /code
@@ -35,5 +36,13 @@ RUN apt-get install -y -f /tmp/innisfree*.deb
 
 RUN apt-get install -y openssh-client
 
+COPY buster-backports.list /etc/apt/sources.list.d/buster-backports.list
+RUN apt-get update && apt-get install -y wireguard-tools --no-install-recommends
+
+RUN apt-get install -y sudo
+RUN printf '%%sudo   ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/wg
+RUN usermod -aG sudo ${USERNAME}
+
 USER ${USERNAME}
+RUN sudo echo hello
 CMD ["/usr/bin/innisfree"]

@@ -1,7 +1,7 @@
 from .server import InnisfreeServer, delete_servers
-from .utils import logger
+from .wg import WireguardManager
+from .utils import logger, CONFIG_DIR, runcmd
 import subprocess
-import tempfile
 import time
 import socket
 from pathlib import Path
@@ -9,15 +9,23 @@ from signal import signal, SIGINT
 
 
 class InnisfreeManager:
-    def __init__(self, proxy_address="localhost", local_port="8000", remote_port="8080") -> None:
-        self.proxy_address = proxy_address
-        self.local_port = local_port
-        self.remote_port = remote_port
-
-        self.server = InnisfreeServer()
+    def __init__(self, ports) -> None:
+        self.ports = ports
+        # TODO: create firewall
+        logger.info("Generating Wireguard network config")
+        self.wg = WireguardManager()
+        self.server = InnisfreeServer(wg_config=self.wg.wg_remote_device.config)
         logger.info("Waiting for server to boot")
         self._wait_for_boot()
         logger.info("Server boot complete")
+        logger.debug("Updating remote endpoint")
+        self.wg.wg_remote_host.endpoint = self.server.ipv4_address
+        logger.debug("Bringing up remote wg iface")
+        self.run("wg-quick up /tmp/innisfree.conf")
+        logger.info("Bringing up local wg iface")
+        self.wg.wg_local_device.up()
+        logger.debug("Testing tunnel for connectivity...")
+        self.test_tunnel()
 
     @property
     def full_config(self) -> str:
@@ -25,8 +33,8 @@ class InnisfreeManager:
         Debugging method, useful for dumping info about a setup.
         """
         s = ""
-        s += f"Client keypair: {self.server.client_keypair}\n"
-        s += f"Server keypair: {self.server.server_keypair}\n"
+        s += f"SSH keypair: {self.server.ssh_server_keypair}\n"
+        # s += f"Wireguard keypair: {self.server.wireguard_keypair}\n"
         s += f"Server IPv4: {self.server.ipv4_address}\n"
         return s
 
@@ -36,10 +44,10 @@ class InnisfreeManager:
 
     @property
     def known_hosts(self) -> Path:
-        _, fpath = tempfile.mkstemp()
+        fpath = CONFIG_DIR.joinpath("known_hosts")
         with open(fpath, "w") as f:
-            f.write(f"{self.server.ipv4_address} {self.server.server_keypair.public}\n")
-        return Path(fpath)
+            f.write(f"{self.server.ipv4_address} {self.server.ssh_server_keypair.public}\n")
+        return fpath
 
     def _wait_for_boot(self) -> None:
         """
@@ -47,7 +55,7 @@ class InnisfreeManager:
         Allows for packages to be installed.
         """
         self._wait_for_ssh()
-        cmd = "cloud-init status --wait"
+        cmd = "cloud-init status --long --wait"
         self.run(cmd)
 
     def _wait_for_ssh(self, interval=5) -> None:
@@ -71,74 +79,56 @@ class InnisfreeManager:
 
     def open_tunnel(self) -> None:
         """
-        Creates an SSH tunnel to the cloud host, passing
-        traffic back to the local service. Returns nothing,
-        but updates the self.tunnel_process attribute with the
-        subprocess.Popen value.
+        The tunnel is stateless, so we're not really opening it, we'll
+        just test that it is indeed open, via ping.
         """
-        ssh_cmd = [
-            "ssh",
-            "-l",
-            "innisfree",
-            "-i",
-            str(self.server.client_keypair.filepath),
-            "-o",
-            f"UserKnownHostsFile={self.known_hosts}",
-            "-o",
-            "ExitOnForwardFailure=yes",
-            "-N",
-            "-R",
-            f"{self.remote_port}:{self.proxy_address}:{self.local_port}",
-            self.server.ipv4_address,
-        ]
-        logger.debug("Opening tunnel, using command: : {}".format(" ".join(ssh_cmd)))
-        self.tunnel_process = subprocess.Popen(ssh_cmd)
-        if self.tunnel_process.returncode not in (None, 0):
-            msg = "Failed to open tunnel"
-            raise Exception(msg)
+        logger.debug("Trying to open tunnel, nothing to open (wireguard)")
 
-    def monitor_tunnel(self, interval=30) -> None:
+    def test_tunnel(self) -> None:
         """
-        Ensures that tunnel remains open. If it disconnects,
-        tries to re-establish the connection. Checks every ``interval`` seconds.
+        Send a ping from local wg iface to remote wg iface.
+        """
+        cmd = f"ping -c1 {self.wg.wg_remote_host.address}".split()
+        runcmd(cmd)
+
+    def monitor_tunnel(self, interval=30, retries=3) -> None:
+        """
+        Ensures that tunnel remains open, via ping. If any ping fails,
+        script will exit non-zero. Maybe that's harsh, but would rather know.
         """
         time.sleep(interval)
 
+        failures = 0
+
         def handle_sigint(signal_received, frame):
-            logger.info("Termination requested, cleaning up...")
+            logger.info("SIGINT, exiting gracefully...")
             self.cleanup()
+            raise
 
         # Exit gracefully
         signal(SIGINT, handle_sigint)
 
-        while self.tunnel_process.poll() is None:
-            logger.debug("Heartbeat: Tunnel appears healthy")
+        while True:
+            try:
+                self.test_tunnel()
+                logger.debug("Heartbeat: Tunnel appears healthy")
+            except subprocess.CalledProcessError:
+                logger.error("Heartbeat: Tunnel failed!")
+                failures += 1
+                if failures < retries:
+                    continue
+                raise
             time.sleep(interval)
-
-        logger.error("Heartbeat: Tunnel failed, retrying")
-        self.open_tunnel()
-        self.monitor_tunnel()
-
-    def close_tunnel(self) -> None:
-        if not hasattr(self, "tunnel_process"):
-            msg = "No tunnel has been opened"
-            raise Exception(msg)
-        # TODO: not convinced either terminate or kill actually results
-        # in the tunnel being closed, maybe loop and poll for exit?
-        # self.tunnel_process.kill()
-        self.tunnel_process.terminate()
 
     def cleanup(self) -> None:
         """
         Tears down all created infra. Ideal for gracefully exiting.
         """
-        logger.debug("Running cleanup tasks")
-        logger.debug("Closing tunnel")
-        self.close_tunnel()
-        logger.debug("Destroy ALL innisfree servers")
+        logger.dbeug("Removing local wg interface")
+        self.wg.wg_local_device.down()
         delete_servers()
-        msg = "Cleanup is completed, exiting"
-        raise Exception(msg)
+        # TODO: Delete firewall
+        logger.info("Cleanup finished, exiting")
 
     def run(self, cmd) -> str:
         ssh_cmd = [
@@ -146,7 +136,7 @@ class InnisfreeManager:
             "-l",
             "innisfree",
             "-i",
-            str(self.server.client_keypair.filepath),
+            str(self.server.ssh_client_keypair.filepath),
             "-o",
             f"UserKnownHostsFile={self.known_hosts}",
             self.server.ipv4_address,

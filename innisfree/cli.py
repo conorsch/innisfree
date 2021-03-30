@@ -1,6 +1,5 @@
 import configargparse
 import sys
-import requests
 import os
 
 from .utils import logger
@@ -10,25 +9,11 @@ from .innisfree import InnisfreeManager
 def parse_args():
     parser = configargparse.ArgumentParser()
     parser.add_argument(
-        "--remote-port",
+        "--ports",
         action="store",
-        default="80",
-        env_var="INNISFREE_REMOTE_PORT",
-        help="Port on public IP to listen on",
-    )
-    parser.add_argument(
-        "--local-port",
-        action="store",
-        default="8080",
-        env_var="INNISFREE_LOCAL_PORT",
-        help="Port of local service to expose",
-    )
-    parser.add_argument(
-        "--proxy-address",
-        action="store",
-        default="localhost",
-        env_var="INNISFREE_PROXY_ADDRESS",
-        help="Destination IP for forwarded traffic",
+        default="80/TCP,443/TCP",
+        env_var="INNISFREE_PORTS",
+        help="List of service ports to forward, comma-separated",
     )
     parser.add_argument(
         "--operator",
@@ -45,22 +30,11 @@ def main() -> int:
     logger.debug("Parsing CLI args")
     args = parse_args()
 
-    logger.debug("Checking destination service")
-    # TODO don't assume http; maybe assume tcp socket
-    dest_service = f"http://{args.proxy_address}:{args.local_port}"
-    try:
-        _ = requests.head(dest_service)
-        logger.debug(f"Service reachable: {dest_service}")
-    except requests.exceptions.ConnectionError:
-        logger.warning(f"Service unreachable: {dest_service}")
-
     if "DIGITALOCEAN_API_TOKEN" not in os.environ:
         logger.error("DIGITALOCEAN_API_TOKEN env var not found")
         return 1
 
-    mgr = InnisfreeManager(
-        proxy_address=args.proxy_address, local_port=args.local_port, remote_port=args.remote_port,
-    )
+    mgr = InnisfreeManager(args.ports)
     try:
         mgr.open_tunnel()
     except Exception as e:
@@ -69,7 +43,7 @@ def main() -> int:
         return 2
 
     logger.info(
-        f"Tunnel open: http://{mgr.server.ipv4_address} -> http://{args.proxy_address}:{args.local_port}"  # noqa
+        f"Tunnel open! Proxying ports {args.ports}. Try http://{mgr.server.ipv4_address}:8080 "  # noqa
     )
 
     try:

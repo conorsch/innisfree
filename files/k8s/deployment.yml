@@ -46,3 +46,9 @@ spec:
           requests:
             cpu: 100m
             memory: 256Mi
+        securityContext:
+          privileged: True
+          capabilities:
+            add:
+              - NET_ADMIN
+              - SYS_ADMIN

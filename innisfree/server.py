@@ -8,33 +8,41 @@ from pathlib import Path
 import os
 import time
 import json
-import tempfile
 from ruamel import yaml
 from typing import Dict
 
 from .ssh import SSHKeypair
-from .utils import logger
+from .utils import logger, CONFIG_DIR, runcmd
 
 DO_REGION = "sfo2"
-DO_SIZE = "s-2vcpu-2gb"
-DO_IMAGE = "debian-10-x64"
+DO_SIZE = "s-1vcpu-1gb"
+DO_IMAGE = "ubuntu-20-04-x64"
 DO_NAME = "innisfree"
 
 
 class InnisfreeServer:
-    def __init__(self) -> None:
+    def __init__(self, wg_config) -> None:
         # Prepare dynamic config vars for instance
         logger.debug("Generating keypairs for connection")
-        self.client_keypair = SSHKeypair()
-        self.server_keypair = SSHKeypair()
+        self.ssh_client_keypair = SSHKeypair(prefix="client_")
+        self.ssh_server_keypair = SSHKeypair(prefix="server_")
         logger.debug("Building cloudconfig")
+        self.wg_config = wg_config
         self.cloudinit_path = self.prepare_cloudinit()
 
+        logger.debug("Initializing Digitalocean API auth")
+        self.auth_init()
         logger.info("Creating server")
         self.json_config = self._create()
         self.name = self.json_config["name"]
         self.droplet_id = self.json_config["id"]
         logger.debug(f"Created server: {self}")
+
+    def auth_init(self):
+        api_token = os.environ["DIGITALOCEAN_API_TOKEN"]
+        # TODO: warn on trailing whitespace, it'll break doctl
+        api_token = api_token.rstrip()
+        runcmd(f"doctl auth init --access-token {api_token}".split())
 
     @property
     def ipv4_address(self):
@@ -68,16 +76,23 @@ class InnisfreeServer:
         # Add dynamic SSH hostkeys so connection is trusted
         c = {}  # type: dict
         c["ssh_keys"] = {}
-        c["ssh_keys"]["ed25519_public"] = self.server_keypair.public
-        c["ssh_keys"]["ed25519_private"] = self.server_keypair.private
+        c["ssh_keys"]["ed25519_public"] = self.ssh_server_keypair.public
+        c["ssh_keys"]["ed25519_private"] = self.ssh_server_keypair.private
 
         # Configure SSH user authorized_keys
         c["users"] = cloudinit_config["users"]
-        c["users"][0]["ssh_authorized_keys"] = [self.client_keypair.public]
+        c["users"][0]["ssh_authorized_keys"] = [self.ssh_client_keypair.public]
 
         cloudinit_config.update(c)
-
-        _, cloudinit_path = tempfile.mkstemp()
+        cloudinit_config["write_files"].append(
+            {
+                "content": self.wg_config,
+                "owner": "root:root",
+                "mode": "0644",
+                "path": "/tmp/innisfree.conf",
+            }
+        )
+        cloudinit_path = CONFIG_DIR.joinpath("cloudconfig")
 
         with open(cloudinit_path, "w") as f:
             yaml.round_trip_dump(cloudinit_config, f, default_flow_style=False, allow_unicode=True)

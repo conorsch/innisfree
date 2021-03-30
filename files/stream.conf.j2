@@ -1,0 +1,18 @@
+# Given a list of dicts declaring services to expose, e.g.
+#
+#   services:
+#     - name: foo
+#       protocol: TCP
+#       port: 8080
+#
+# configure nginx stream proxies to pass traffic to internal interface.
+
+{% for s in services %}
+server {
+  listen {{ s.port }}{% " udp" if s.protocol == "UDP" else "" %};
+  proxy_pass {{ proxy_address }}:{{ s.port }};
+  {% if s.protocol == "UDP" %}
+  proxy_responses 0;
+  {% endif %}
+}
+{% endfor %}
