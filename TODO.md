@@ -3,6 +3,8 @@
 * "ssh" subcommand
 * add --minikube-ip cmd
 * support updating state
+* support "ip" subcommand, for spitting out jawns
+* support "floating-ip" config
 
 ## 
 

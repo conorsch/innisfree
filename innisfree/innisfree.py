@@ -124,7 +124,7 @@ class InnisfreeManager:
         """
         Tears down all created infra. Ideal for gracefully exiting.
         """
-        logger.dbeug("Removing local wg interface")
+        logger.debug("Removing local wg interface")
         self.wg.wg_local_device.down()
         delete_servers()
         # TODO: Delete firewall
