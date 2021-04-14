@@ -2,8 +2,11 @@ import configargparse
 import sys
 import os
 
-from .utils import logger
+from .utils import logger, parse_ports
 from .innisfree import InnisfreeManager
+
+
+INNISFREE_DEFAULT_DEST_IP = "127.0.0.1"
 
 
 def parse_args():
@@ -14,6 +17,13 @@ def parse_args():
         default="80/TCP,443/TCP",
         env_var="INNISFREE_PORTS",
         help="List of service ports to forward, comma-separated",
+    )
+    parser.add_argument(
+        "--dest-ip",
+        action="store",
+        default=INNISFREE_DEFAULT_DEST_IP,
+        env_var="INNISFREE_DEST_IP",
+        help="IPv4 address for proxy destination, whither traffic is forwarded",
     )
     parser.add_argument(
         "--operator",
@@ -34,17 +44,26 @@ def main() -> int:
         logger.error("DIGITALOCEAN_API_TOKEN env var not found")
         return 1
 
-    mgr = InnisfreeManager(args.ports)
     try:
+        mgr = InnisfreeManager(ports=args.ports, dest_ip=args.dest_ip)
         mgr.open_tunnel()
     except Exception as e:
-        msg = "Failed to open tunnel: {}".format(e)
-        logger.error(msg)
+        logger.error(f"Failed to open tunnel: {e}")
+        mgr.cleanup()
         return 2
 
-    logger.info(
-        f"Tunnel open! Proxying ports {args.ports}. Try http://{mgr.server.ipv4_address}:8080 "  # noqa
-    )
+    mgr.start_proxy()
+
+    services = parse_ports(args.ports)
+    try:
+        example_get = [s for s in services if s.protocol == "TCP"][0].port
+    except IndexError:
+        example_get = 0
+
+    tunnel_msg = f"Tunnel open! Proxying ports {args.ports}."
+    if example_get:
+        tunnel_msg += f" Try http://{mgr.server.ipv4_address}:{example_get}"
+    logger.info(tunnel_msg)
 
     try:
         mgr.monitor_tunnel()

@@ -1,20 +1,27 @@
-from .server import InnisfreeServer, delete_servers
+from .server import InnisfreeServer
 from .wg import WireguardManager
-from .utils import logger, CONFIG_DIR, runcmd
+from .utils import logger, CONFIG_DIR, runcmd, parse_ports, clean_config_dir
 import subprocess
+from subprocess import check_output, PIPE, CalledProcessError
 import time
 import socket
+import threading
 from pathlib import Path
 from signal import signal, SIGINT
+from .wg import WIREGUARD_LOCAL_IP
+from .proxy import server_loop
 
 
 class InnisfreeManager:
-    def __init__(self, ports) -> None:
-        self.ports = ports
+    def __init__(self, ports: str, dest_ip: str = "127.0.0.1") -> None:
+        self.ports = parse_ports(ports)
         # TODO: create firewall
+        self.dest_ip = dest_ip
         logger.info("Generating Wireguard network config")
         self.wg = WireguardManager()
-        self.server = InnisfreeServer(wg_config=self.wg.wg_remote_device.config)
+        self.server = InnisfreeServer(
+            wg_config=self.wg.wg_remote_device.config, services=self.ports
+        )
         logger.info("Waiting for server to boot")
         self._wait_for_boot()
         logger.info("Server boot complete")
@@ -42,6 +49,17 @@ class InnisfreeManager:
         s = f"<InnisfreeManager: ServerIPv4={self.server.ipv4_address}>"
         return s
 
+    def start_proxy(self) -> None:
+        """
+        Creates a new thread for handling traffic to the local service being exposed.
+        """
+        for s in self.ports:
+            proxy_thread = threading.Thread(
+                target=server_loop, args=(WIREGUARD_LOCAL_IP, s.port, self.dest_ip, s.port),
+            )
+            proxy_thread.start()
+            logger.debug(f"Starting thread for service {s}")
+
     @property
     def known_hosts(self) -> Path:
         fpath = CONFIG_DIR.joinpath("known_hosts")
@@ -58,7 +76,7 @@ class InnisfreeManager:
         cmd = "cloud-init status --long --wait"
         self.run(cmd)
 
-    def _wait_for_ssh(self, interval=5) -> None:
+    def _wait_for_ssh(self, interval: int = 5) -> None:
         """
         Blocks until a TCP:22 is open. Does not validate
         a successful auth connection. Checks every ``interval`` seconds.
@@ -91,7 +109,7 @@ class InnisfreeManager:
         cmd = f"ping -c1 {self.wg.wg_remote_host.address}".split()
         runcmd(cmd)
 
-    def monitor_tunnel(self, interval=30, retries=3) -> None:
+    def monitor_tunnel(self, interval: int = 300, retries: int = 3) -> None:
         """
         Ensures that tunnel remains open, via ping. If any ping fails,
         script will exit non-zero. Maybe that's harsh, but would rather know.
@@ -100,10 +118,10 @@ class InnisfreeManager:
 
         failures = 0
 
-        def handle_sigint(signal_received, frame):
+        def handle_sigint(signal_received, frame) -> None:
             logger.info("SIGINT, exiting gracefully...")
             self.cleanup()
-            raise
+            raise Exception("Exiting gracefully")
 
         # Exit gracefully
         signal(SIGINT, handle_sigint)
@@ -112,7 +130,7 @@ class InnisfreeManager:
             try:
                 self.test_tunnel()
                 logger.debug("Heartbeat: Tunnel appears healthy")
-            except subprocess.CalledProcessError:
+            except CalledProcessError:
                 logger.error("Heartbeat: Tunnel failed!")
                 failures += 1
                 if failures < retries:
@@ -126,11 +144,13 @@ class InnisfreeManager:
         """
         logger.debug("Removing local wg interface")
         self.wg.wg_local_device.down()
-        delete_servers()
+        logger.debug("Destroying droplet")
+        self.server.droplet.destroy()
+        clean_config_dir()
         # TODO: Delete firewall
         logger.info("Cleanup finished, exiting")
 
-    def run(self, cmd) -> str:
+    def run(self, cmd: str, quiet: bool = False) -> str:
         ssh_cmd = [
             "ssh",
             "-l",
@@ -143,5 +163,9 @@ class InnisfreeManager:
         ]
         ssh_cmd += cmd.split()
         logger.debug("Running cmd: {}".format(" ".join(ssh_cmd)))
-        r = subprocess.check_output(ssh_cmd).decode("utf-8")
+        r = ""
+        if quiet:
+            check_call(ssh_cmd, stdout=PIPE, stdin=PIPE, stderr=PIPE).decode("utf-8")
+        else:
+            r = check_output(ssh_cmd, stdin=PIPE, stderr=PIPE).decode("utf-8")
         return r

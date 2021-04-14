@@ -7,7 +7,7 @@ from .utils import CONFIG_DIR
 
 
 class SSHKeypair:
-    def __init__(self, prefix="") -> None:
+    def __init__(self, prefix: str = "") -> None:
         self.prefix = prefix
         (privkey_filepath, privkey, pubkey) = self._create()
         self.filepath = privkey_filepath

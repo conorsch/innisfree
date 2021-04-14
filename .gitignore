@@ -2,8 +2,10 @@
 *.whl
 *egg-info/
 dist/
-*.deb
 
+.mypy_cache/
+
+*.deb
 debian/.debhelper/
 debian/*.debhelper.log
 debian/*.postinst.debhelper

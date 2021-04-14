@@ -1,5 +1,5 @@
 ## new junk
-* silence subprocess output in logging
+* suppress digitalocean cloudinit debug logging (shows privkeys)
 * "ssh" subcommand
 * add --minikube-ip cmd
 * support updating state

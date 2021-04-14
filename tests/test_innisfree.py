@@ -4,8 +4,6 @@ import pytest
 import subprocess
 import requests
 
-from innisfree.server import delete_servers
-
 
 def test_version():
     assert __version__ == "0.1.0"
@@ -25,10 +23,8 @@ def setup_module(module):
 
 @pytest.fixture(scope="class")
 def innisfree_manager():
-    delete_servers()
     mgr = InnisfreeManager()
     yield mgr
-    delete_servers()
 
 
 class TestInnisfreeManager:

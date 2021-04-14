@@ -9,6 +9,8 @@ from pathlib import Path
 from .utils import CONFIG_DIR, runcmd
 
 WIREGUARD_LISTEN_PORT = "51820"
+WIREGUARD_LOCAL_IP = "10.50.0.1"
+WIREGUARD_REMOTE_IP = "10.50.0.2"
 
 
 class WireguardKeypair:
@@ -75,7 +77,7 @@ class WireguardDevice:
         self.config_filepath = CONFIG_DIR.joinpath("innisfree.conf")
 
     @property
-    def config(self):
+    def config(self) -> str:
         """
         Generates device config from host info, returns string contents
         of a valid Wireguard config file for a device.
@@ -91,16 +93,16 @@ class WireguardDevice:
         r = t.render(ctx)
         return r
 
-    def create(self):
+    def create(self) -> None:
         with open(self.config_filepath, "w") as f:
             f.write(self.config)
 
-    def down(self):
+    def down(self) -> None:
         cmd = f"wg-quick down {self.config_filepath}".split()
         # No error-checking because it may not exist yet
         call(cmd, stdout=PIPE, stdin=PIPE, stderr=PIPE)
 
-    def up(self):
+    def up(self) -> None:
         self.create()
         # It's possible the iface exists already, take it down
         self.down()
@@ -116,14 +118,14 @@ class WireguardManager:
     with the endpoint after both devs are bootstrapped.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # TODO: make CIDR customizable
-        self.wg_local_ip = "10.50.0.1"
+        self.wg_local_ip = WIREGUARD_LOCAL_IP
         self.wg_local_name = "innisfree_local"
         self.wg_local_host = WireguardHost(
             name=self.wg_local_name, address=self.wg_local_ip, endpoint="", listenport="",
         )
-        self.wg_remote_ip = "10.50.0.2"
+        self.wg_remote_ip = WIREGUARD_REMOTE_IP
         self.wg_remote_name = "innisfree_remote"
         self.wg_remote_host = WireguardHost(
             name=self.wg_remote_name,

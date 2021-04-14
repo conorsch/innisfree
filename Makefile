@@ -17,7 +17,7 @@ lint: clean
 
 .PHONY: clean
 clean:
-	git clean -fdx
+	git clean -fdX
 
 .PHONY: docker
 docker:
@@ -30,7 +30,7 @@ run: docker
 	docker run docker.ruin.dev/innisfree
 
 .PHONY: deb
-deb:
+deb: clean
 	dpkg-buildpackage -us -uc
 	mv ../innisfree*_amd64.deb dist/
 	find dist/ -type f -iname 'innisfree*.deb' | sort -n

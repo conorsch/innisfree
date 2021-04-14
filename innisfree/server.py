@@ -8,9 +8,13 @@ from pathlib import Path
 import os
 import time
 from ruamel import yaml
+import jinja2
 
 from .ssh import SSHKeypair
-from .utils import logger, CONFIG_DIR
+from .utils import logger, CONFIG_DIR, ServicePort
+from .wg import WIREGUARD_LOCAL_IP
+
+import typing
 
 DO_REGION = "sfo2"
 DO_SIZE = "s-1vcpu-1gb"
@@ -19,8 +23,9 @@ DO_NAME = "innisfree"
 
 
 class InnisfreeServer:
-    def __init__(self, wg_config) -> None:
+    def __init__(self, wg_config: str, services: typing.List[ServicePort]) -> None:
         # Prepare dynamic config vars for instance
+        self.services = services
         logger.debug("Generating keypairs for connection")
         self.ssh_client_keypair = SSHKeypair(prefix="client_")
         self.ssh_server_keypair = SSHKeypair(prefix="server_")
@@ -36,17 +41,17 @@ class InnisfreeServer:
         self.droplet_id = self.droplet.id
         logger.debug(f"Created server: {self}")
 
-    def auth_init(self):
+    def auth_init(self) -> None:
         api_token = os.environ["DIGITALOCEAN_API_TOKEN"]
         api_token = api_token.rstrip()
         self.api_token = api_token
 
     @property
-    def ipv4_address(self):
+    def ipv4_address(self) -> str:
         """
         Returns public IPv4 of droplet.
         """
-        return self.droplet.ip_address
+        return str(self.droplet.ip_address)
 
     def __repr__(self) -> str:
         return f"<InnisfreeServer: IPv4={self.ipv4_address}>"
@@ -65,7 +70,7 @@ class InnisfreeServer:
             cloudinit_config = yaml.round_trip_load(f, preserve_quotes=True)
 
         # Add dynamic SSH hostkeys so connection is trusted
-        c = {}  # type: dict
+        c = {}  # type: typing.Dict[str, typing.Any]
         c["ssh_keys"] = {}
         c["ssh_keys"]["ed25519_public"] = self.ssh_server_keypair.public
         c["ssh_keys"]["ed25519_private"] = self.ssh_server_keypair.private
@@ -78,9 +83,17 @@ class InnisfreeServer:
         cloudinit_config["write_files"].append(
             {
                 "content": self.wg_config,
+                "owner": "root:sudo",
+                "mode": "0640",
+                "path": "/tmp/innisfree.conf",
+            }
+        )
+        cloudinit_config["write_files"].append(
+            {
+                "content": self.nginx_streams,
                 "owner": "root:root",
                 "mode": "0644",
-                "path": "/tmp/innisfree.conf",
+                "path": "/etc/nginx/conf.d/stream/innisfree.conf",
             }
         )
         cloudinit_path = CONFIG_DIR.joinpath("cloudconfig")
@@ -92,6 +105,19 @@ class InnisfreeServer:
         return Path(cloudinit_path)
 
     @property
+    def nginx_streams(self) -> str:
+        project_root = Path(__file__).parent.parent
+        nginx_template = project_root.joinpath("files", "stream.conf.j2")
+        with open(nginx_template, "r") as f:
+            t = jinja2.Template(f.read())
+        ctx = {
+            "services": self.services,
+            "dest_ip": WIREGUARD_LOCAL_IP,
+        }
+        r = t.render(ctx)
+        return r
+
+    @property
     def user_data(self) -> str:
         fpath = self.prepare_cloudinit()
         with open(fpath, "r") as f:
@@ -99,7 +125,7 @@ class InnisfreeServer:
             user_data = f.read()
         return user_data
 
-    def _create(self, wait=True) -> digitalocean.Droplet:
+    def _create(self, wait: bool = True) -> digitalocean.Droplet:
         """
         Creates DigitalOcean server for managing tunnel.
         Optionally accepts a dict of cloudinit config data,
@@ -122,13 +148,3 @@ class InnisfreeServer:
             droplet.load()
 
         return droplet
-
-
-def delete_servers() -> None:
-    do_token = os.environ["DIGITALOCEAN_API_TOKEN"]
-    mgr = digitalocean.Manager(token=do_token)
-    all_droplets = mgr.get_all_droplets()
-
-    innisfree_droplets = [d for d in all_droplets if d.name == "innisfree"]
-    for d in innisfree_droplets:
-        d.delete()

@@ -8,5 +8,5 @@ Standards-Version: 3.9.5
 Package: innisfree
 Architecture: any
 Pre-Depends: dpkg (>= 1.16.1), ${misc:Pre-Depends}
-Depends: ${python3:Depends}, ${misc:Depends}
+Depends: ${python3:Depends}, ${misc:Depends}, libcap2-bin
 Description: Manages TCP tunnels for forwarding k8s traffic behind NAT
