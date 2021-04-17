@@ -26,14 +26,12 @@ class InnisfreeServer:
     def __init__(self, wg_config: str, services: typing.List[ServicePort]) -> None:
         # Prepare dynamic config vars for instance
         self.services = services
-        logger.debug("Generating keypairs for connection")
+        # Generate keypairs for SSH connection
         self.ssh_client_keypair = SSHKeypair(prefix="client_")
         self.ssh_server_keypair = SSHKeypair(prefix="server_")
-        logger.debug("Building cloudconfig")
         self.wg_config = wg_config
         self.cloudinit_path = self.prepare_cloudinit()
 
-        logger.debug("Initializing Digitalocean API auth")
         self.auth_init()
         logger.info("Creating server")
         self.droplet = self._create()
@@ -101,7 +99,6 @@ class InnisfreeServer:
         with open(cloudinit_path, "w") as f:
             yaml.round_trip_dump(cloudinit_config, f, default_flow_style=False, allow_unicode=True)
 
-        logger.debug(f"Cloudconfig filepath: {cloudinit_path}")
         return Path(cloudinit_path)
 
     @property
@@ -125,6 +122,16 @@ class InnisfreeServer:
             user_data = f.read()
         return user_data
 
+    def attach_ip(self, ip: str) -> None:
+        """
+        Attaches a pre-existing Floating IP to the server.
+        """
+        f = digitalocean.FloatingIP()
+        f.ip = ip
+        # Check that IP given on CLI exists
+        f = f.load()
+        f.assign(self.droplet.id)
+
     def _create(self, wait: bool = True) -> digitalocean.Droplet:
         """
         Creates DigitalOcean server for managing tunnel.
@@ -140,7 +147,6 @@ class InnisfreeServer:
             user_data=self.user_data,
             backups=False,
         )
-        logger.debug("Creating droplet via python-digitalocean...")
         droplet.create()
 
         while wait and not droplet.ip_address:

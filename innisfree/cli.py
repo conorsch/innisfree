@@ -1,4 +1,4 @@
-import configargparse
+import argparse
 import sys
 import os
 
@@ -10,28 +10,38 @@ INNISFREE_DEFAULT_DEST_IP = "127.0.0.1"
 
 
 def parse_args():
-    parser = configargparse.ArgumentParser()
-    parser.add_argument(
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    up_parser = subparsers.add_parser("up", help="Create new innisfree tunnel")
+    up_parser.add_argument(
         "--ports",
         action="store",
         default="80/TCP,443/TCP",
-        env_var="INNISFREE_PORTS",
         help="List of service ports to forward, comma-separated",
     )
-    parser.add_argument(
+    up_parser.add_argument(
         "--dest-ip",
         action="store",
         default=INNISFREE_DEFAULT_DEST_IP,
-        env_var="INNISFREE_DEST_IP",
         help="IPv4 address for proxy destination, whither traffic is forwarded",
     )
-    parser.add_argument(
+    up_parser.add_argument(
+        "--floating-ip",
+        action="store",
+        default="",
+        help="Declare pre-existing Floating IP to attach to droplet, so DNS entries can be static",
+    )
+    up_parser.add_argument(
         "--operator",
         action="store_true",
         default=False,
-        env_var="INNISFREE_OPERATOR",
         help="Run in operator mode, suitable for inside k8s cluster",
     )
+
+    _ = subparsers.add_parser("ssh", help="Open interactive shell on cloud node, via SSH")
+    _ = subparsers.add_parser("ip", help="Display IPv4 address for cloud node")
+
     args = parser.parse_args()
     return args
 
@@ -44,8 +54,18 @@ def main() -> int:
         logger.error("DIGITALOCEAN_API_TOKEN env var not found")
         return 1
 
+    if args.command == "ssh":
+        InnisfreeManager.open_shell()
+        return 0
+
+    if args.command == "ip":
+        print(InnisfreeManager.get_server_ip())
+        return 0
+
+    # Assume default command is 'up'
+    mgr = InnisfreeManager(ports=args.ports, dest_ip=args.dest_ip, floating_ip=args.floating_ip)
     try:
-        mgr = InnisfreeManager(ports=args.ports, dest_ip=args.dest_ip)
+        mgr.up()
         mgr.open_tunnel()
     except Exception as e:
         logger.error(f"Failed to open tunnel: {e}")

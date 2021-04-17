@@ -1,8 +1,7 @@
 from .server import InnisfreeServer
 from .wg import WireguardManager
 from .utils import logger, CONFIG_DIR, runcmd, parse_ports, clean_config_dir
-import subprocess
-from subprocess import check_output, PIPE, CalledProcessError
+from subprocess import check_output, check_call, PIPE, CalledProcessError, Popen
 import time
 import socket
 import threading
@@ -13,18 +12,23 @@ from .proxy import server_loop
 
 
 class InnisfreeManager:
-    def __init__(self, ports: str, dest_ip: str = "127.0.0.1") -> None:
+    def __init__(self, ports: str, dest_ip: str = "127.0.0.1", floating_ip: str = "") -> None:
         self.ports = parse_ports(ports)
         # TODO: create firewall
         self.dest_ip = dest_ip
-        logger.info("Generating Wireguard network config")
+        self.floating_ip = floating_ip
+
+    def up(self) -> None:
         self.wg = WireguardManager()
         self.server = InnisfreeServer(
             wg_config=self.wg.wg_remote_device.config, services=self.ports
         )
-        logger.info("Waiting for server to boot")
+        logger.debug("Waiting for server to boot")
         self._wait_for_boot()
-        logger.info("Server boot complete")
+        logger.debug("Server boot complete")
+        if self.floating_ip:
+            logger.debug("Attaching floating IP")
+            self.server.attach_ip(self.floating_ip)
         logger.debug("Updating remote endpoint")
         self.wg.wg_remote_host.endpoint = self.server.ipv4_address
         logger.debug("Bringing up remote wg iface")
@@ -150,6 +154,39 @@ class InnisfreeManager:
         # TODO: Delete firewall
         logger.info("Cleanup finished, exiting")
 
+    @classmethod
+    def get_server_ip(self) -> str:
+        """
+        Looks up IPv4 address of server and returns it.
+        Assumes already created, should handle more gracefully if not.
+        """
+        with open(CONFIG_DIR.joinpath("known_hosts"), "r") as f:
+            server_ip = f.read().split()[0]
+        return server_ip
+
+    @classmethod
+    def open_shell(self) -> None:
+        """
+        Start interactive SSH shell, for logging into cloud node.
+        Makes some assumptions about local config in order to log in
+        via a separate process from the already running innisfree tunnel process.
+        """
+        client_key = CONFIG_DIR.joinpath("client_id_ed25519")
+        known_hosts = CONFIG_DIR.joinpath("known_hosts")
+        server_ip = self.get_server_ip()
+        ssh_cmd = [
+            "ssh",
+            "-l",
+            "innisfree",
+            "-i",
+            client_key,
+            "-o",
+            f"UserKnownHostsFile={known_hosts}",
+            server_ip,
+        ]
+        p = Popen(ssh_cmd)
+        p.communicate()
+
     def run(self, cmd: str, quiet: bool = False) -> str:
         ssh_cmd = [
             "ssh",
@@ -162,10 +199,10 @@ class InnisfreeManager:
             self.server.ipv4_address,
         ]
         ssh_cmd += cmd.split()
-        logger.debug("Running cmd: {}".format(" ".join(ssh_cmd)))
-        r = ""
+        logger.debug("running cmd: {}".format(" ".join(ssh_cmd)))
         if quiet:
-            check_call(ssh_cmd, stdout=PIPE, stdin=PIPE, stderr=PIPE).decode("utf-8")
+            check_call(ssh_cmd, stdout=PIPE, stdin=PIPE, stderr=PIPE)
+            r = ""
         else:
             r = check_output(ssh_cmd, stdin=PIPE, stderr=PIPE).decode("utf-8")
         return r
