@@ -1,3 +1,9 @@
+innisfree (0.1.1) unstable; urgency=medium
+
+  * Implements local proxy logic in Python
+
+ -- Conor Schaefer <conor.schaefer@gmail.com>  Sat, 17 Apr 2021 14:54:09 -0700
+
 innisfree (0.1.0) unstable; urgency=low
 
   * First packaged version

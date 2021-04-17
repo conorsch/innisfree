@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "innisfree"
-version = "0.1.0"
+version = "0.1.1"
 description = ""
 authors = ["Conor Schaefer <conor.schaefer@gmail.com>"]
 include = ["files/*"]
