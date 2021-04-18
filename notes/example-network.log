@@ -1,0 +1,24 @@
+        id: 242349305,
+        name: "jawn",
+        status: "active",
+        user_data: None,
+        raw_json: None,
+        networks: {
+            "v4": [
+                {
+                    "ip_address": "10.138.0.8",
+                    "netmask": "255.255.0.0",
+                    "type": "private",
+                    "gateway": "",
+                },
+                {
+                    "type": "public",
+                    "gateway": "159.65.96.1",
+                    "ip_address": "159.65.110.189",
+                    "netmask": "255.255.240.0",
+                },
+            ],
+            "v6": [],
+        },
+    }
+

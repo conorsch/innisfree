@@ -5,15 +5,14 @@ all: lint test build
 
 .PHONY: build
 build:
-	cargo build
-	./target/debug/innisfree up
+	cargo run -- up
 
 .PHONY: test
 test:
 	cargo test
 
 .PHONY: lint
-lint: clean
+lint:
 	cargo fmt
 
 .PHONY: clean
@@ -32,7 +31,11 @@ run: docker
 	docker run docker.ruin.dev/innisfree-rust
 
 .PHONY: deb
-deb: clean
+deb:
 	dpkg-buildpackage -us -uc
 	mv ../innisfree*_amd64.deb dist/
 	find dist/ -type f -iname 'innisfree*.deb' | sort -n
+
+.PHONY: install-deps
+install-deps:
+	sudo apt install -y libssl-dev

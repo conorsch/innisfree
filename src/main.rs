@@ -2,19 +2,21 @@ use clap::App;
 use clap::Arg;
 use std::env;
 
+// Innisfree imports
+mod server;
+// use server;
+
 #[macro_use]
 extern crate log;
 
 use env_logger::Env;
-
 
 fn main() {
     // Activate env_logger https://github.com/env-logger-rs/env_logger
     // The `Env` lets us tweak what the environment
     // variables to read are and what the default
     // value is if they're missing
-    let env = Env::default()
-        .filter_or("RUST_LOG", "debug");
+    let env = Env::default().filter_or("RUST_LOG", "debug");
     env_logger::init_from_env(env);
     info!("starting up");
     let matches = App::new("Innisfree")
@@ -28,30 +30,24 @@ fn main() {
                     Arg::new("ports")
                         .about("list of service ports to forward, comma-separated")
                         .default_value("80/TCP,443/TCP")
-                        .short('p')
+                        .short('p'),
                 )
                 .arg(
                     Arg::new("dest-ip")
                         .about("Ipv4 Address of proxy destination, whither traffic is forwarded")
                         .default_value("127.0.0.1")
-                        .short('d')
+                        .short('d'),
                 )
                 .arg(
                     Arg::new("floating-ip")
                         .about("Declare pre-existing Floating IP to attach to Droplet")
                         // Figure out how to default to an empty string
                         .default_value("None")
-                        .short('f')
-                )
+                        .short('f'),
+                ),
         )
-        .subcommand(
-            App::new("ssh")
-                .about("Open interactive shell on cloud node, via SSH")
-        )
-        .subcommand(
-            App::new("ip")
-                .about("Display IPv4 address for cloud node")
-        )
+        .subcommand(App::new("ssh").about("Open interactive shell on cloud node, via SSH"))
+        .subcommand(App::new("ip").about("Display IPv4 address for cloud node"))
         .get_matches();
 
     // Ensure DigitalOcean API token is defined
@@ -68,11 +64,16 @@ fn main() {
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level app
     if let Some(ref matches) = matches.subcommand_matches("up") {
-        error!("Subcommand 'up' is not yet implemented");
+        warn!("Subcommand 'up' is only partially implemented");
         if !matches.is_present("dest-ip") {
             warn!("Yo bro, the dest-ip is required...");
         }
-        std::process::exit(0);
+        let d = server::create_droplet();
+        debug!("Printing droplet info");
+        debug!("{:?}", d);
+
+        let i = &d.ipv4_address();
+        info!("Droplet booted, IPv4 address: {:#?}", i);
     }
 
     // Continued program logic goes here...
