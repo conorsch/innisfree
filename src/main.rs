@@ -4,6 +4,7 @@ use std::env;
 
 // Innisfree imports
 mod server;
+mod ssh;
 // use server;
 
 #[macro_use]
@@ -74,6 +75,12 @@ fn main() {
 
         let i = &d.ipv4_address();
         info!("Droplet booted, IPv4 address: {:#?}", i);
+
+        let c = server::get_user_data();
+        info!("User data looks like: {:#?}", c);
+
+        let s = ssh::create_ssh_keypair();
+        info!("SSH keypair: {:?}", s);
     }
 
     // Continued program logic goes here...

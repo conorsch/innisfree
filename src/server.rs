@@ -7,9 +7,9 @@ use std::thread;
 use std::time;
 
 // For file reading
+use std::fs::File;
 use std::io;
 use std::io::prelude::*;
-use std::fs::File;
 
 // Web API request imports, see
 // https://rust-lang-nursery.github.io/rust-cookbook/web/clients/apis.html
