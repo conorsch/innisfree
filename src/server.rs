@@ -87,17 +87,17 @@ fn get_droplet(droplet: &Droplet) -> Droplet {
 //   * export a function to create a droplet
 //   * then worry about cloudinit
 //
-fn get_user_data() -> String {
-    let user_data =
-        fs::read_to_string("../files/cloudinit.cfg").expect("Can't find cloudinit file");
+pub fn get_user_data() -> String {
+    // let user_data =
+    //    fs::read_to_string("/home/user/gits/innisfree-rust/files/cloudinit.cfg").expect("Can't find cloudinit file");
+    let mut user_data = include_str!("../files/cloudinit.cfg");
+    let user_data = user_data.to_string();
     return user_data;
 }
 
-
 fn get_mock_droplet_json() -> String {
-    let mut droplet_json = String::new();
-    let mut f = File::open("/home/user/gits/innisfree-rust/files/droplet.json").unwrap();
-    f.read_to_string(&mut droplet_json).unwrap();
+    let mut droplet_json = include_str!("../files/droplet.json");
+    let droplet_json = droplet_json.to_string();
     return droplet_json;
 }
 
