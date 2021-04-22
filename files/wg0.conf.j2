@@ -1,25 +1,8 @@
-# Given a list of dicts containing Wireguard configs, e.g.
-#
-#   wireguard_configs:
-#     - name: foo
-#       address: 10.0.0.1/32
-#       privatekey: falksjfdlaskjfdlkasjfdlkajdsf
-#       publickey: laksjfdlakjfdslkajslkfajslkfdja
-#       endpoint: 8.8.8.8
-#       listen: 51820
-#
-#   services:
-#     - name: foo
-#       public: TCP
-#       port: 8080
-#
-# configure Wireguard to pass traffic to internal interface.
-
 {% for h in wireguard_hosts %}
 {% if h.name == wireguard_name %}
 [Interface]
 # Interface: {{ h.name }}
-PrivateKey = {{ h.privatekey }}
+PrivateKey = {{ h.keypair.private }}
 # Hardcode /30 subnet for two hosts
 # Trying /24 in case that helps?
 Address = {{ h.address }}/24
@@ -34,7 +17,7 @@ ListenPort = {{ h.listenport }}
 {% if h.name != wireguard_name %}
 [Peer]
 # Peer: {{ h.name }}
-PublicKey = {{ h.publickey }}
+PublicKey = {{ h.keypair.public }}
 {% if h.endpoint %}
 Endpoint = {{ h.endpoint }}:{{ h.listenport }}
 {% endif %}

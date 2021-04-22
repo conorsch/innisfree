@@ -88,7 +88,7 @@ fn get_droplet(droplet: &Droplet) -> Droplet {
 }
 
 pub fn get_user_data() -> String {
-    let mut user_data = include_str!("../files/cloudinit.cfg");
+    let user_data = include_str!("../files/cloudinit.cfg");
     let user_data = user_data.to_string();
     return user_data;
 }
@@ -105,6 +105,7 @@ pub fn create_droplet() -> Droplet {
     return droplet;
 }
 
+#[allow(dead_code)]
 pub fn _create_droplet() -> Droplet {
     // Build JSON request body, for sending to DigitalOcean API
     let droplet_body = json!({

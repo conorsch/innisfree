@@ -2,7 +2,14 @@ use std::io::prelude::*;
 use std::process::{Command, Stdio};
 use std::str;
 
-#[derive(Debug)]
+use crate::config::make_config_dir;
+
+extern crate tera;
+
+extern crate serde;
+use serde::Serialize;
+
+#[derive(Debug, Serialize)]
 pub struct WireguardKeypair {
     private: String,
     public: String,
@@ -14,7 +21,7 @@ impl WireguardKeypair {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct WireguardHost {
     name: String,
     address: String,
@@ -23,7 +30,7 @@ pub struct WireguardHost {
     keypair: WireguardKeypair,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct WireguardDevice {
     name: String,
     hosts: Vec<WireguardHost>,
@@ -31,9 +38,20 @@ pub struct WireguardDevice {
 
 impl WireguardDevice {
     // Returns contents of an INI config file for WG, e.g. 'wg0.conf' in docs.
-    pub fn config() -> String {
-        let mut wg_template = include_str!("../files/wg0.conf.j2");
-        return wg_template.to_string();
+    pub fn config(&self) -> String {
+        let wg_template = include_str!("../files/wg0.conf.j2");
+        let mut context = tera::Context::new();
+        context.insert("wireguard_name", &self.name);
+        context.insert("wireguard_hosts", &self.hosts);
+        let result = tera::Tera::one_off(wg_template, &context, true).unwrap();
+        return result;
+    }
+
+    pub fn create(&self) {
+        let mut wg_config_path = std::path::PathBuf::from(make_config_dir());
+        wg_config_path.push("innisfree.conf");
+        let mut f = std::fs::File::create(&wg_config_path).unwrap();
+        f.write_all(&self.config().as_bytes()).unwrap();
     }
 }
 
@@ -82,8 +100,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn config_generation() {}
-
+    fn config_generation() {
+        let wg_hosts = _generate_hosts();
+        let wg_device = WireguardDevice {
+            name: "foo1".to_string(),
+            hosts: wg_hosts,
+        };
+        let wg_config = wg_device.config();
+        assert!(wg_config.contains("Interface"));
+        assert!(wg_config.contains("PrivateKey = "));
+    }
 
     // Helper function for reusable structs
     fn _generate_hosts() -> Vec<WireguardHost> {
