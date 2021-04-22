@@ -6,6 +6,7 @@ use std::env;
 mod config;
 mod server;
 mod ssh;
+mod wg;
 // use server;
 
 #[macro_use]
@@ -89,6 +90,9 @@ fn main() {
 
         let d = config::make_config_dir();
         info!("Config dir: {:?}", d);
+
+        let wg = wg::WireguardKeypair::new();
+        info!("Wireguard keypair: {:?}", wg);
     }
 
     // Continued program logic goes here...

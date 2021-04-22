@@ -64,7 +64,7 @@ mod tests {
     #[test]
     fn web_ports_parse_ok() {
         let port_spec = "80/TCP,443/TCP";
-        let services = parse_ports(&port_spec);
+        let services = ServicePort::from_str_multi(&port_spec);
         assert!(services.len() == 2);
         let s1 = &services[0];
         assert!(s1.port == 80);
