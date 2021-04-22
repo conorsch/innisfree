@@ -27,6 +27,7 @@ const DO_IMAGE: &str = "ubuntu-20-04-x64";
 const DO_NAME: &str = "jawn";
 const DO_API_BASE_URL: &str = "https://api.digitalocean.com/v2/droplets";
 
+// Representation of a DigitalOcean Droplet, i.e. cloud VM.
 #[derive(Debug, Deserialize)]
 pub struct Droplet {
     id: u32,
@@ -41,6 +42,8 @@ pub struct Droplet {
     networks: HashMap<String, Vec<HashMap<String, String>>>,
 }
 
+// The 'networks' field in the API response will be a nested object,
+// so let's stub that out so a Droplet can have a .networks field.
 #[derive(Debug, Deserialize)]
 struct Network {
     ip_address: String,
@@ -58,6 +61,7 @@ struct DropletResponse {
 }
 
 impl Droplet {
+    // IPv4 lookup can fail, should return Result to force handling.
     pub fn ipv4_address(&self) -> String {
         let mut ip: String = "".to_string();
         for v4_network in &self.networks["v4"] {
@@ -83,13 +87,7 @@ fn get_droplet(droplet: &Droplet) -> Droplet {
     return droplet_new;
 }
 
-// Plan of record:
-//   * export a function to create a droplet
-//   * then worry about cloudinit
-//
 pub fn get_user_data() -> String {
-    // let user_data =
-    //    fs::read_to_string("/home/user/gits/innisfree-rust/files/cloudinit.cfg").expect("Can't find cloudinit file");
     let mut user_data = include_str!("../files/cloudinit.cfg");
     let user_data = user_data.to_string();
     return user_data;

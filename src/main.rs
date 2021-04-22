@@ -3,6 +3,7 @@ use clap::Arg;
 use std::env;
 
 // Innisfree imports
+mod config;
 mod server;
 mod ssh;
 // use server;
@@ -79,8 +80,15 @@ fn main() {
         let c = server::get_user_data();
         info!("User data looks like: {:#?}", c);
 
-        let s = ssh::create_ssh_keypair();
+        let s = ssh::SSHKeypair::new();
         info!("SSH keypair: {:?}", s);
+
+        let port_spec = matches.value_of("ports").unwrap();
+        let p = config::ServicePort::from_str_multi(port_spec);
+        info!("ServicePorts: {:?}", p);
+
+        let d = config::make_config_dir();
+        info!("Config dir: {:?}", d);
     }
 
     // Continued program logic goes here...

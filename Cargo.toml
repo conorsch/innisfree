@@ -10,6 +10,7 @@ edition = "2018"
 clap = "3.0.0-beta.2"
 log = "0.4.0"
 env_logger = "0.8.3"
+home = "0.5.3"
 # digitalocean = "0.1.1"
 # digitalocean = { git = "https://github.com/phaynes/digitalocean", branch = "hotfix_branch" }
 reqwest = { version = "0.11", features = ["blocking", "json", "rustls"] }

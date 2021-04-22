@@ -2,6 +2,8 @@ use std::fs::{read_to_string, remove_file};
 use std::path::Path;
 use std::process::Command;
 
+use crate::config::make_config_dir;
+
 #[derive(Debug)]
 pub struct SSHKeypair {
     prefix: String,
@@ -11,9 +13,20 @@ pub struct SSHKeypair {
     filepath: String,
 }
 
-pub fn create_ssh_keypair() -> SSHKeypair {
-    // TODO: Use config dir, not /tmp
-    let privkey_filepath: String = "/tmp/innisfree-ssh-key".to_string();
+impl SSHKeypair {
+    pub fn new() -> SSHKeypair {
+        create_ssh_keypair()
+    }
+}
+
+fn create_ssh_keypair() -> SSHKeypair {
+    // Really clumsy with Path & PathBuf, so converting everything to Strings for now
+    let config_dir = make_config_dir();
+    let privkey_filepath: String = Path::new(&config_dir)
+        .join("innisfree-ssh-key")
+        .to_str()
+        .unwrap()
+        .to_string();
     let pubkey_filepath: String = privkey_filepath.clone() + ".pub";
     debug!("Removing pre-existing ssh key files...");
     if Path::new(&privkey_filepath).exists() {
