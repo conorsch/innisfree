@@ -9,7 +9,13 @@ extern crate tera;
 extern crate serde;
 use serde::Serialize;
 
-#[derive(Debug, Serialize)]
+// Cutting corners here. IP addresses should be customizable,
+// and be a valid /30.
+const WIREGUARD_LISTEN_PORT: i32 = 51820;
+const WIREGUARD_LOCAL_IP: &str = "10.50.0.1";
+const WIREGUARD_REMOTE_IP: &str = "10.50.0.2";
+
+#[derive(Debug, Serialize, Clone)]
 pub struct WireguardKeypair {
     private: String,
     public: String,
@@ -21,7 +27,7 @@ impl WireguardKeypair {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct WireguardHost {
     name: String,
     address: String,
@@ -37,6 +43,12 @@ pub struct WireguardDevice {
 }
 
 impl WireguardDevice {
+    pub fn new(name: &str, hosts: Vec<WireguardHost>) -> WireguardDevice {
+        WireguardDevice {
+            name: name.to_string(),
+            hosts: hosts,
+        }
+    }
     // Returns contents of an INI config file for WG, e.g. 'wg0.conf' in docs.
     pub fn config(&self) -> String {
         let wg_template = include_str!("../files/wg0.conf.j2");
@@ -52,6 +64,69 @@ impl WireguardDevice {
         wg_config_path.push("innisfree.conf");
         let mut f = std::fs::File::create(&wg_config_path).unwrap();
         f.write_all(&self.config().as_bytes()).unwrap();
+    }
+}
+
+#[derive(Debug)]
+pub struct WireguardManager {
+    pub wg_local_ip: String,
+    wg_local_name: String,
+    wg_local_host: WireguardHost,
+    pub wg_local_device: WireguardDevice,
+
+    pub wg_remote_ip: String,
+    wg_remote_name: String,
+    wg_remote_host: WireguardHost,
+    pub wg_remote_device: WireguardDevice,
+
+    pub hosts: Vec<WireguardHost>,
+}
+
+impl WireguardManager {
+    pub fn new() -> WireguardManager {
+        let wg_local_ip = WIREGUARD_LOCAL_IP.to_string();
+        let wg_local_name = "innisfree_local".to_string();
+        let wg_local_host = WireguardHost {
+            name: wg_local_name.clone(),
+            address: wg_local_ip.clone(),
+            endpoint: "".to_string(),
+            listenport: 0,
+            keypair: WireguardKeypair::new(),
+        };
+
+        let wg_remote_ip = WIREGUARD_REMOTE_IP.to_string();
+        let wg_remote_name = "innisfree_remote".to_string();
+        let wg_remote_host = WireguardHost {
+            name: wg_remote_name.clone(),
+            address: wg_remote_ip.clone(),
+            endpoint: "".to_string(),
+            listenport: WIREGUARD_LISTEN_PORT,
+            keypair: WireguardKeypair::new(),
+        };
+        let hosts = vec![wg_local_host.clone(), wg_remote_host.clone()];
+        let wg_local_device = WireguardDevice {
+            name: wg_local_name.clone(),
+            hosts: hosts.clone(),
+        };
+        let wg_remote_device = WireguardDevice {
+            name: wg_remote_name.clone(),
+            hosts: hosts.clone(),
+        };
+
+        WireguardManager {
+            wg_local_ip: wg_local_ip,
+            wg_local_name: wg_local_name,
+            wg_local_host: wg_local_host.clone(),
+
+            wg_remote_ip: wg_remote_ip,
+            wg_remote_name: wg_remote_name,
+            wg_remote_host: wg_remote_host.clone(),
+
+            wg_local_device: wg_local_device,
+            wg_remote_device: wg_remote_device,
+
+            hosts: hosts,
+        }
     }
 }
 

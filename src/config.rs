@@ -1,7 +1,7 @@
 use std::path::Path;
 extern crate home;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ServicePort {
     port: i32,
     protocol: String,

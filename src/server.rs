@@ -20,6 +20,10 @@ extern crate serde_json;
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::ssh::SSHKeypair;
+use crate::wg::WireguardDevice;
+use crate::config::ServicePort;
+
 const DO_REGION: &str = "sfo2";
 const DO_SIZE: &str = "s-1vcpu-1gb";
 const DO_IMAGE: &str = "ubuntu-20-04-x64";
@@ -42,6 +46,34 @@ pub struct Droplet {
     networks: HashMap<String, Vec<HashMap<String, String>>>,
 }
 
+
+#[derive(Debug)]
+pub struct InnisfreeServer {
+    pub services: Vec<ServicePort>,
+    pub ssh_client_keypair: SSHKeypair,
+    pub ssh_server_keypair: SSHKeypair,
+    wg_device: WireguardDevice,
+    droplet: Droplet,
+    name: String,
+}
+
+impl InnisfreeServer {
+    pub fn new(services: Vec<ServicePort>, wg_device: WireguardDevice) -> InnisfreeServer {
+        let droplet = create_droplet();
+        InnisfreeServer {
+            services: services,
+            ssh_client_keypair: SSHKeypair::new(),
+            ssh_server_keypair: SSHKeypair::new(),
+            wg_device: wg_device,
+            droplet: droplet,
+            name: "innisfree".to_string(),
+        }
+    }
+    pub fn ipv4_address(&self) -> String {
+        let droplet = &self.droplet;
+        droplet.ipv4_address()
+    }
+} 
 // The 'networks' field in the API response will be a nested object,
 // so let's stub that out so a Droplet can have a .networks field.
 #[derive(Debug, Deserialize)]
@@ -99,14 +131,14 @@ fn get_mock_droplet_json() -> String {
     return droplet_json;
 }
 
-pub fn create_droplet() -> Droplet {
+#[allow(dead_code)]
+pub fn _create_droplet() -> Droplet {
     let droplet_json = get_mock_droplet_json();
     let droplet: Droplet = serde_json::from_str(&droplet_json).unwrap();
     return droplet;
 }
 
-#[allow(dead_code)]
-pub fn _create_droplet() -> Droplet {
+pub fn create_droplet() -> Droplet {
     // Build JSON request body, for sending to DigitalOcean API
     let droplet_body = json!({
         "image": DO_IMAGE,
@@ -125,11 +157,9 @@ pub fn _create_droplet() -> Droplet {
         .bearer_auth(api_key)
         .send()
         .unwrap();
-    println!("RESP: {:?}", response);
 
     let j: serde_json::Value = response.json().unwrap();
     let d: String = j["droplet"].to_string();
-    println!("DROPLET JAWN {:?}", d);
     let droplet: Droplet = serde_json::from_str(&d).unwrap();
     loop {
         let droplet: Droplet = get_droplet(&droplet);

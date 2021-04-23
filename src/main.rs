@@ -7,6 +7,7 @@ mod config;
 mod server;
 mod ssh;
 mod wg;
+mod manager;
 // use server;
 
 #[macro_use]
@@ -91,8 +92,11 @@ fn main() {
         let d = config::make_config_dir();
         info!("Config dir: {:?}", d);
 
-        let wg = wg::WireguardKeypair::new();
-        info!("Wireguard keypair: {:?}", wg);
+        let mgr = manager::InnisfreeManager::new(p);
+        info!("Manager: {:?}", mgr);
+        info!("Bringing up manager..");
+        mgr.up();
+
     }
 
     // Continued program logic goes here...

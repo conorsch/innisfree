@@ -7,10 +7,10 @@ use crate::config::make_config_dir;
 #[derive(Debug)]
 pub struct SSHKeypair {
     prefix: String,
-    private: String,
-    public: String,
+    pub private: String,
+    pub public: String,
     // TODO: type filepath as Path
-    filepath: String,
+    pub filepath: String,
 }
 
 impl SSHKeypair {
