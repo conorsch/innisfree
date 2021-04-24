@@ -1,0 +1,16 @@
+#!/bin/bash
+set -e
+
+
+ip="$1"
+shift 1
+
+while true; do
+    if nc -vz "$ip" 22; then
+        echo "PORT IS OPEN"
+        notify-send "PORT IS OPEN"
+        break;
+    else
+        sleep 5;
+    fi;
+done

@@ -9,11 +9,14 @@
 
 
 * [x] Port template logic for cloudinit
-* [ ] Create droplet from cloudinit data
+* [x] Create droplet from cloudinit data
+* [x] Write out cloudinit to disk, for debugging
+* [ ] Write test for cloudinit header
+
 
 * [x] Port SSH keygen
 * [ ] Port SSH cloudinit
-* [ ] Port SSH local kp
+* [x] Port SSH local kp
 * [ ] Port WG addr
 * [ ] Port WG cloudinit
 * [ ] Port WG up

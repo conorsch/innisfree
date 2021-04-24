@@ -14,16 +14,20 @@ pub struct SSHKeypair {
 }
 
 impl SSHKeypair {
-    pub fn new() -> SSHKeypair {
-        create_ssh_keypair()
+    pub fn new(prefix: &str) -> SSHKeypair {
+        create_ssh_keypair(prefix)
     }
 }
 
-fn create_ssh_keypair() -> SSHKeypair {
+fn create_ssh_keypair(prefix: &str) -> SSHKeypair {
     // Really clumsy with Path & PathBuf, so converting everything to Strings for now
     let config_dir = make_config_dir();
+    let mut key_name: String = "innisfree-ssh-key".to_owned();
+    // OK this is actually a suffix
+    key_name.push_str("-");
+    key_name.push_str(prefix);
     let privkey_filepath: String = Path::new(&config_dir)
-        .join("innisfree-ssh-key")
+        .join(key_name)
         .to_str()
         .unwrap()
         .to_string();
@@ -52,13 +56,35 @@ fn create_ssh_keypair() -> SSHKeypair {
         .status()
         .expect("failed to generate ssh keypair via ssh-keygen");
 
-    let privkey = read_to_string(&privkey_filepath).expect("Failed to open ssh privkey file");
-    let pubkey = read_to_string(&pubkey_filepath).expect("Failed to open ssh pubkey file");
+    let privkey = read_to_string(&privkey_filepath)
+        .expect("Failed to open ssh privkey file")
+        .to_string();
+    let pubkey = read_to_string(&pubkey_filepath)
+        .expect("Failed to open ssh pubkey file")
+        .trim()
+        .to_string();
     let kp = SSHKeypair {
-        prefix: "".to_string(),
+        prefix: prefix.to_string(),
         private: privkey,
         public: pubkey,
         filepath: privkey_filepath,
     };
     return kp;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn whitespace_is_stripped() {
+        let kp = SSHKeypair::new("test1");
+        assert!(kp.private != kp.public);
+        // trailing whitespace can screw up the yaml
+        assert!(!kp.public.ends_with("\n"));
+        assert!(!kp.public.ends_with(" "));
+        // for privkey, that trailing newline is crucial.
+        // lost an hour to debugging that
+        assert!(kp.private.ends_with("\n"));
+    }
 }

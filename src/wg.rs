@@ -29,11 +29,11 @@ impl WireguardKeypair {
 
 #[derive(Debug, Serialize, Clone)]
 pub struct WireguardHost {
-    name: String,
-    address: String,
-    endpoint: String,
-    listenport: i32,
-    keypair: WireguardKeypair,
+    pub name: String,
+    pub address: String,
+    pub endpoint: String,
+    pub listenport: i32,
+    pub keypair: WireguardKeypair,
 }
 
 #[derive(Debug, Serialize)]
@@ -59,7 +59,7 @@ impl WireguardDevice {
         return result;
     }
 
-    pub fn create(&self) {
+    pub fn write_config(&self) {
         let mut wg_config_path = std::path::PathBuf::from(make_config_dir());
         wg_config_path.push("innisfree.conf");
         let mut f = std::fs::File::create(&wg_config_path).unwrap();
@@ -104,10 +104,10 @@ impl WireguardManager {
             keypair: WireguardKeypair::new(),
         };
         let hosts = vec![wg_local_host.clone(), wg_remote_host.clone()];
-        let wg_local_device = WireguardDevice {
-            name: wg_local_name.clone(),
-            hosts: hosts.clone(),
-        };
+        // Intentionally using constructor and direct struct instantiation,
+        // to compare visually. Don't have a sense for which is idiomatic yet,
+        // although I suspect it's the direct struct. Maybe Clippy knows.
+        let wg_local_device = WireguardDevice::new(&wg_local_name.clone(), hosts.clone());
         let wg_remote_device = WireguardDevice {
             name: wg_remote_name.clone(),
             hosts: hosts.clone(),

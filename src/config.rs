@@ -1,4 +1,3 @@
-use std::path::Path;
 extern crate home;
 
 #[derive(Debug, Clone)]

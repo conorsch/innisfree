@@ -14,6 +14,7 @@ test:
 .PHONY: lint
 lint:
 	cargo fmt
+	cargo clippy
 
 .PHONY: clean
 clean:
@@ -39,3 +40,7 @@ deb:
 .PHONY: install-deps
 install-deps:
 	sudo apt install -y libssl-dev
+
+.PHONY: push
+push:
+	rsync -a --info=progress2 --delete-after /home/user/gits/innisfree-rust/ tau:/home/conor/innisfree-rust/

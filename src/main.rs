@@ -4,10 +4,10 @@ use std::env;
 
 // Innisfree imports
 mod config;
+mod manager;
 mod server;
 mod ssh;
 mod wg;
-mod manager;
 // use server;
 
 #[macro_use]
@@ -72,19 +72,6 @@ fn main() {
         if !matches.is_present("dest-ip") {
             warn!("Yo bro, the dest-ip is required...");
         }
-        let d = server::create_droplet();
-        debug!("Printing droplet info");
-        debug!("{:?}", d);
-
-        let i = &d.ipv4_address();
-        info!("Droplet booted, IPv4 address: {:#?}", i);
-
-        let c = server::get_user_data();
-        info!("User data looks like: {:#?}", c);
-
-        let s = ssh::SSHKeypair::new();
-        info!("SSH keypair: {:?}", s);
-
         let port_spec = matches.value_of("ports").unwrap();
         let p = config::ServicePort::from_str_multi(port_spec);
         info!("ServicePorts: {:?}", p);
@@ -92,11 +79,13 @@ fn main() {
         let d = config::make_config_dir();
         info!("Config dir: {:?}", d);
 
+        info!("Creating connection up manager..");
         let mgr = manager::InnisfreeManager::new(p);
-        info!("Manager: {:?}", mgr);
         info!("Bringing up manager..");
         mgr.up();
 
+        let ip = &mgr.server.ipv4_address();
+        info!("Server IPv4 address: {:?}", ip);
     }
 
     // Continued program logic goes here...

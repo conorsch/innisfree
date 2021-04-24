@@ -2,14 +2,8 @@
 // use digitalocean::prelude::*;
 use std::collections::HashMap;
 use std::env;
-use std::fs;
 use std::thread;
 use std::time;
-
-// For file reading
-use std::fs::File;
-use std::io;
-use std::io::prelude::*;
 
 // Web API request imports, see
 // https://rust-lang-nursery.github.io/rust-cookbook/web/clients/apis.html
@@ -17,12 +11,13 @@ extern crate reqwest;
 
 extern crate serde;
 extern crate serde_json;
-use serde::Deserialize;
+extern crate serde_yaml;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::config::{make_config_dir, ServicePort};
 use crate::ssh::SSHKeypair;
 use crate::wg::WireguardDevice;
-use crate::config::ServicePort;
 
 const DO_REGION: &str = "sfo2";
 const DO_SIZE: &str = "s-1vcpu-1gb";
@@ -33,7 +28,7 @@ const DO_API_BASE_URL: &str = "https://api.digitalocean.com/v2/droplets";
 
 // Representation of a DigitalOcean Droplet, i.e. cloud VM.
 #[derive(Debug, Deserialize)]
-pub struct Droplet {
+struct Droplet {
     id: u32,
     name: String,
     // Field are attributes, will need to retrieve them as foo.slug
@@ -41,11 +36,71 @@ pub struct Droplet {
     // size: String,
     // image: String,
     status: String,
-    user_data: Option<String>,
     raw_json: Option<String>,
     networks: HashMap<String, Vec<HashMap<String, String>>>,
 }
 
+impl Droplet {
+    fn new(user_data: &str) -> Droplet {
+        debug!("Creating new DigitalOcean Droplet");
+        // Build JSON request body, for sending to DigitalOcean API
+        let droplet_body = json!({
+            "image": DO_IMAGE,
+            "name": DO_NAME,
+            "region": DO_REGION,
+            "size": DO_SIZE,
+            "user_data": user_data,
+        });
+
+        // The API logic could be abstracted further, in a DigitalOcean Manager.
+        // Right now we only create Droplet resources, but an API Firewall would be nice.
+        let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
+        let request_url = DO_API_BASE_URL;
+        let client = reqwest::blocking::Client::new();
+
+        let response = client
+            .post(request_url)
+            .json(&droplet_body)
+            .bearer_auth(api_key)
+            .send()
+            .unwrap();
+
+        let j: serde_json::Value = response.json().unwrap();
+        let d: String = j["droplet"].to_string();
+        let droplet: Droplet = serde_json::from_str(&d).unwrap();
+        debug!("Droplet created, waiting for boot");
+        let droplet = droplet.wait_for_boot();
+        return droplet;
+    }
+
+    fn wait_for_boot(&self) -> Droplet {
+        // The JSON response for droplet creation won't include info like
+        // public IPv4 address, because that hasn't been assigned yet. The 'status'
+        // field will show as "new", so wait until it's "active", then network info
+        // will be populated. Might be a good use of enums here.
+        loop {
+            thread::sleep(time::Duration::from_secs(10));
+            let droplet: Droplet = get_droplet(&self);
+            if droplet.status == "active" {
+                return droplet;
+            } else {
+                info!("Droplet still booting, waiting...");
+            }
+        }
+    }
+
+    // IPv4 lookup can fail, should return Result to force handling.
+    pub fn ipv4_address(&self) -> String {
+        let mut ip: String = "".to_string();
+        for v4_network in &self.networks["v4"] {
+            if v4_network["type"] == "public" {
+                ip = v4_network["ip_address"].clone();
+                break;
+            }
+        }
+        return ip.to_string();
+    }
+}
 
 #[derive(Debug)]
 pub struct InnisfreeServer {
@@ -57,13 +112,44 @@ pub struct InnisfreeServer {
     name: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct CloudConfig {
+    users: Vec<CloudConfigUser>,
+    package_update: bool,
+    package_upgrade: bool,
+    ssh_keys: std::collections::HashMap<String, String>,
+    write_files: Vec<CloudConfigFile>,
+    packages: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CloudConfigFile {
+    content: String,
+    owner: String,
+    path: String,
+    permissions: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CloudConfigUser {
+    name: String,
+    groups: Vec<String>,
+    sudo: String,
+    shell: String,
+    ssh_authorized_keys: Vec<String>,
+}
+
 impl InnisfreeServer {
     pub fn new(services: Vec<ServicePort>, wg_device: WireguardDevice) -> InnisfreeServer {
-        let droplet = create_droplet();
+        // Initialize variables outside struct, so we'll need to pass them around
+        let ssh_client_keypair = SSHKeypair::new("client");
+        let ssh_server_keypair = SSHKeypair::new("server");
+        let user_data = generate_user_data(&ssh_client_keypair, &ssh_server_keypair, &wg_device);
+        let droplet = Droplet::new(&user_data);
         InnisfreeServer {
             services: services,
-            ssh_client_keypair: SSHKeypair::new(),
-            ssh_server_keypair: SSHKeypair::new(),
+            ssh_client_keypair: ssh_client_keypair,
+            ssh_server_keypair: ssh_server_keypair,
             wg_device: wg_device,
             droplet: droplet,
             name: "innisfree".to_string(),
@@ -73,7 +159,46 @@ impl InnisfreeServer {
         let droplet = &self.droplet;
         droplet.ipv4_address()
     }
-} 
+}
+
+pub fn generate_user_data(
+    ssh_client_keypair: &SSHKeypair,
+    ssh_server_keypair: &SSHKeypair,
+    wg_device: &WireguardDevice,
+) -> String {
+    let user_data = include_str!("../files/cloudinit.cfg");
+    let user_data = user_data.to_string();
+
+    let mut cloud_config = serde_yaml::from_str::<CloudConfig>(&user_data).unwrap();
+    cloud_config.ssh_keys.insert(
+        "ed25519_public".to_string(),
+        ssh_server_keypair.public.to_string(),
+    );
+    cloud_config.ssh_keys.insert(
+        "ed25519_private".to_string(),
+        ssh_server_keypair.private.to_string(),
+    );
+
+    // For debugging, add another pubkey
+    // $ doctl compute ssh-key list -o json | jq -r .[].public_key
+    // ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIlLuXP4H+Jrj7wiuaP18nam634kKSNVHJ0SisdFxv3v
+    let tmp_pubkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIlLuXP4H+Jrj7wiuaP18nam634kKSNVHJ0SisdFxv3v".to_owned();
+    cloud_config.users[0].ssh_authorized_keys = vec![ssh_client_keypair.public.to_string(), tmp_pubkey];
+
+    let cc_rendered: String = serde_yaml::to_string(&cloud_config).unwrap();
+    let cc_rendered_no_header = &cc_rendered.as_bytes()[4..];
+    let cc_rendered = std::str::from_utf8(&cc_rendered_no_header).unwrap();
+    let mut cc: String = String::from("#cloud-config");
+    cc.push_str("\n");
+    cc.push_str(&cc_rendered);
+    // Write full config locally for debugging;
+    let mut fpath = std::path::PathBuf::from(make_config_dir());
+    fpath.push("cloudinit.cfg");
+    std::fs::write(&fpath.to_str().unwrap(), &cc).expect("Failed to create cloud-init");
+
+    return cc;
+}
+
 // The 'networks' field in the API response will be a nested object,
 // so let's stub that out so a Droplet can have a .networks field.
 #[derive(Debug, Deserialize)]
@@ -92,20 +217,6 @@ struct DropletResponse {
     droplet: Droplet,
 }
 
-impl Droplet {
-    // IPv4 lookup can fail, should return Result to force handling.
-    pub fn ipv4_address(&self) -> String {
-        let mut ip: String = "".to_string();
-        for v4_network in &self.networks["v4"] {
-            if v4_network["type"] == "public" {
-                ip = v4_network["ip_address"].clone();
-                break;
-            }
-        }
-        return ip.to_string();
-    }
-}
-
 fn get_droplet(droplet: &Droplet) -> Droplet {
     let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
     let request_url = DO_API_BASE_URL.to_owned() + "/" + &droplet.id.to_string();
@@ -119,55 +230,59 @@ fn get_droplet(droplet: &Droplet) -> Droplet {
     return droplet_new;
 }
 
-pub fn get_user_data() -> String {
-    let user_data = include_str!("../files/cloudinit.cfg");
-    let user_data = user_data.to_string();
-    return user_data;
-}
-
 fn get_mock_droplet_json() -> String {
-    let mut droplet_json = include_str!("../files/droplet.json");
+    let droplet_json = include_str!("../files/droplet.json");
     let droplet_json = droplet_json.to_string();
     return droplet_json;
 }
 
 #[allow(dead_code)]
-pub fn _create_droplet() -> Droplet {
+fn _create_droplet() -> Droplet {
     let droplet_json = get_mock_droplet_json();
     let droplet: Droplet = serde_json::from_str(&droplet_json).unwrap();
     return droplet;
 }
 
-pub fn create_droplet() -> Droplet {
-    // Build JSON request body, for sending to DigitalOcean API
-    let droplet_body = json!({
-        "image": DO_IMAGE,
-        "name": DO_NAME,
-        "region": DO_REGION,
-        "size": DO_SIZE,
-    });
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wg::{WireguardDevice, WireguardHost, WireguardKeypair};
 
-    let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
-    let request_url = DO_API_BASE_URL;
-    let client = reqwest::blocking::Client::new();
+    // Helper function for reusable structs
+    // This function is copied from src/wg.rs,
+    // figure out a way to reuse it safely
+    fn _generate_hosts() -> Vec<WireguardHost> {
+        let kp1 = WireguardKeypair::new();
+        let h1 = WireguardHost {
+            name: "foo1".to_string(),
+            address: "127.0.0.1".to_string(),
+            endpoint: "1.1.1.1".to_string(),
+            listenport: 80,
+            keypair: kp1,
+        };
+        let kp2 = WireguardKeypair::new();
+        let h2 = WireguardHost {
+            name: "foo2".to_string(),
+            address: "127.0.0.1".to_string(),
+            endpoint: "".to_string(),
+            listenport: 80,
+            keypair: kp2,
+        };
+        let mut wg_hosts: Vec<WireguardHost> = vec![];
+        wg_hosts.push(h1);
+        wg_hosts.push(h2);
+        return wg_hosts;
+    }
 
-    let response = client
-        .post(request_url)
-        .json(&droplet_body)
-        .bearer_auth(api_key)
-        .send()
-        .unwrap();
-
-    let j: serde_json::Value = response.json().unwrap();
-    let d: String = j["droplet"].to_string();
-    let droplet: Droplet = serde_json::from_str(&d).unwrap();
-    loop {
-        let droplet: Droplet = get_droplet(&droplet);
-        if droplet.status == "active" {
-            return droplet;
-        } else {
-            info!("Droplet still booting, waiting...");
-            thread::sleep(time::Duration::from_secs(10));
-        }
+    #[test]
+    fn cloudconfig_has_header() {
+        let kp1 = SSHKeypair::new("server-test1");
+        let kp2 = SSHKeypair::new("server-test2");
+        let wg_hosts = _generate_hosts();
+        let wg_device = WireguardDevice::new("foo1", wg_hosts);
+        let user_data = generate_user_data(&kp1, &kp2, &wg_device);
+        assert!(user_data.ends_with(""));
+        assert!(user_data.starts_with("#cloud-config"));
+        assert!(user_data.starts_with("#cloud-config\n"));
     }
 }
