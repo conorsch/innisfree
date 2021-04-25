@@ -82,6 +82,7 @@ fn main() {
 
         let ip = &mgr.server.ipv4_address();
         info!("Server IPv4 address: {:?}", ip);
+        debug!("Try logging in with 'innisfree ssh'");
     }
 
     if let Some(ref _matches) = matches.subcommand_matches("ssh") {
@@ -90,6 +91,13 @@ fn main() {
         info!("Found server IPv4 address: {:?}", ip);
         debug!("Attempting to open interactive shell");
         manager::open_shell();
+    }
+
+    if let Some(ref _matches) = matches.subcommand_matches("ip") {
+        warn!("Subcommand 'ip' is only partially implemented; it assumes server exists");
+        let ip = manager::get_server_ip().unwrap();
+        debug!("Found ip address: {:?}", ip);
+        println!("{}", ip);
     }
 
     // Continued program logic goes here...
