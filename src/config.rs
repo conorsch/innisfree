@@ -12,8 +12,8 @@ impl ServicePort {
             port: 80,
             protocol: "TCP".to_string(),
         };
-        if port_spec.contains("/") {
-            let port_spec_parts: Vec<&str> = port_spec.split("/").collect();
+        if port_spec.contains('/') {
+            let port_spec_parts: Vec<&str> = port_spec.split('/').collect();
             let port: i32 = port_spec_parts[0].parse::<i32>().unwrap();
             let protocol: String = port_spec_parts[1].to_string();
             sp.port = port;
@@ -24,17 +24,17 @@ impl ServicePort {
             sp.port = port;
             sp.protocol = protocol;
         }
-        return sp;
+        sp
     }
 
     pub fn from_str_multi(port_spec: &str) -> Vec<ServicePort> {
-        let raw_ports: Vec<&str> = port_spec.split(",").collect();
+        let raw_ports: Vec<&str> = port_spec.split(',').collect();
         let mut results: Vec<ServicePort> = vec![];
         for raw_port in raw_ports {
             let sp = ServicePort::from_str(&raw_port);
             results.push(sp);
         }
-        return results;
+        results
     }
 }
 
@@ -43,7 +43,7 @@ pub fn make_config_dir() -> String {
     config_dir.push(".config");
     config_dir.push("innisfree");
     std::fs::create_dir_all(&config_dir).unwrap();
-    return config_dir.to_str().unwrap().to_string();
+    config_dir.to_str().unwrap().to_string()
 }
 
 #[cfg(test)]

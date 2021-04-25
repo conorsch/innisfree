@@ -14,19 +14,27 @@ pub struct InnisfreeManager {
 impl InnisfreeManager {
     pub fn new(ports: Vec<ServicePort>) -> InnisfreeManager {
         let wg = WireguardManager::new();
-        let server = InnisfreeServer::new(ports, wg.wg_remote_device);
+        let server = InnisfreeServer::new(ports, wg.clone().wg_remote_device);
         InnisfreeManager {
             ports: server.services.to_vec(),
             dest_ip: "127.0.0.1".to_string(),
             floating_ip: Some("".to_string()),
-            server: server,
-            wg: WireguardManager::new(),
+            server,
+            wg,
         }
     }
     pub fn up(&self) {
         self.wait_for_ssh();
-        self.wg.wg_local_device.write_config();
         self.wait_for_cloudinit();
+        // Write out cloudinit config locally, for debugging
+        self.server.write_user_data();
+        let ip = self.server.ipv4_address();
+        let mut wg = self.wg.wg_local_device.clone();
+        wg.peer.endpoint = ip;
+        wg.write_config();
+        self.bring_up_remote_wg();
+        self.bring_up_local_wg();
+        self.test_connection();
     }
     fn wait_for_cloudinit(&self) {
         debug!("Waiting for cloudinit to complete...");
@@ -50,11 +58,58 @@ impl InnisfreeManager {
             }
         }
     }
+    fn test_connection(&self) {
+        debug!("Pinging the remote connection to confirm tunnel open");
+        let ip = &self.wg.wg_remote_ip;
+        let cmd = "ping";
+        let cmd_args = vec!["-c1", "-w5", &ip];
+        let status = std::process::Command::new(cmd)
+            .args(cmd_args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .expect("Failed to ping remote Wireguard interface, tunnel broken");
+        debug!("Ping check for connectivity returned: {}", status);
+        assert!(status.success());
+    }
+    pub fn bring_up_remote_wg(&self) {
+        debug!("Bringing up remote Wireguard interface");
+        let cmd = vec!["wg-quick", "up", "/tmp/innisfree.conf"];
+        self.run_cmd(cmd);
+    }
+    pub fn bring_up_local_wg(&self) {
+        debug!("Bringing up local Wireguard interface");
+        // Bring down in case the config was running with a different host
+        self.bring_down_local_wg();
+        let cmd = "wg-quick";
+        let mut fpath = std::path::PathBuf::from(make_config_dir());
+        fpath.push("innisfree.conf");
+        let cmd_args = vec!["up", &fpath.to_str().unwrap()];
+        std::process::Command::new(cmd)
+            .args(cmd_args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .expect("Failed to bring up local Wireguard interface");
+    }
+    pub fn bring_down_local_wg(&self) {
+        debug!("Bringing down local Wireguard interface");
+        let cmd = "wg-quick";
+        let mut fpath = std::path::PathBuf::from(make_config_dir());
+        fpath.push("innisfree.conf");
+        let cmd_args = vec!["down", &fpath.to_str().unwrap()];
+        std::process::Command::new(cmd)
+            .args(cmd_args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .expect("Failed to bring up local Wireguard interface");
+    }
     pub fn known_hosts(&self) -> String {
         let ipv4_address = &self.server.ipv4_address();
         let server_host_key = &self.server.ssh_server_keypair.public;
         let mut host_line = ipv4_address.clone();
-        host_line.push_str(" ");
+        host_line.push(' ');
         host_line.push_str(&server_host_key);
 
         let mut fpath = std::path::PathBuf::from(make_config_dir());
@@ -80,6 +135,8 @@ impl InnisfreeManager {
         cmd_args.extend(cmd);
         std::process::Command::new("ssh")
             .args(cmd_args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .output()
             .expect("SSH command failed");
     }
@@ -89,14 +146,14 @@ pub fn get_server_ip() -> Option<String> {
     let mut fpath = std::path::PathBuf::from(make_config_dir());
     fpath.push("known_hosts");
     let known_hosts = std::fs::read_to_string(&fpath).unwrap();
-    let host_parts: Vec<&str> = known_hosts.split(" ").collect();
+    let host_parts: Vec<&str> = known_hosts.split(' ').collect();
     let ip: String = host_parts[0].to_string();
     Some(ip)
 }
 
 pub fn open_shell() {
     let mut client_key = std::path::PathBuf::from(make_config_dir());
-    client_key.push("innisfree-ssh-key-client");
+    client_key.push("client_id_ed25519");
     let mut known_hosts = std::path::PathBuf::from(make_config_dir());
     known_hosts.push("known_hosts");
     let mut known_hosts_opt = "UserKnownHostsFile=".to_owned();

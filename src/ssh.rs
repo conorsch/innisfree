@@ -5,7 +5,7 @@ use std::process::Command;
 use crate::config::make_config_dir;
 
 #[derive(Debug)]
-pub struct SSHKeypair {
+pub struct SshKeypair {
     prefix: String,
     pub private: String,
     pub public: String,
@@ -13,19 +13,18 @@ pub struct SSHKeypair {
     pub filepath: String,
 }
 
-impl SSHKeypair {
-    pub fn new(prefix: &str) -> SSHKeypair {
+impl SshKeypair {
+    pub fn new(prefix: &str) -> SshKeypair {
         create_ssh_keypair(prefix)
     }
 }
 
-fn create_ssh_keypair(prefix: &str) -> SSHKeypair {
+fn create_ssh_keypair(prefix: &str) -> SshKeypair {
     // Really clumsy with Path & PathBuf, so converting everything to Strings for now
     let config_dir = make_config_dir();
-    let mut key_name: String = "innisfree-ssh-key".to_owned();
-    // OK this is actually a suffix
-    key_name.push_str("-");
-    key_name.push_str(prefix);
+    let mut key_name = String::from(prefix);
+    key_name.push('_');
+    key_name.push_str("id_ed25519");
     let privkey_filepath: String = Path::new(&config_dir)
         .join(key_name)
         .to_str()
@@ -54,20 +53,17 @@ fn create_ssh_keypair(prefix: &str) -> SSHKeypair {
         .status()
         .expect("failed to generate ssh keypair via ssh-keygen");
 
-    let privkey = read_to_string(&privkey_filepath)
-        .expect("Failed to open ssh privkey file")
-        .to_string();
+    let privkey = read_to_string(&privkey_filepath).expect("Failed to open ssh privkey file");
     let pubkey = read_to_string(&pubkey_filepath)
         .expect("Failed to open ssh pubkey file")
         .trim()
         .to_string();
-    let kp = SSHKeypair {
+    SshKeypair {
         prefix: prefix.to_string(),
         private: privkey,
         public: pubkey,
         filepath: privkey_filepath,
-    };
-    return kp;
+    }
 }
 
 #[cfg(test)]
@@ -76,7 +72,7 @@ mod tests {
 
     #[test]
     fn whitespace_is_stripped() {
-        let kp = SSHKeypair::new("test1");
+        let kp = SshKeypair::new("test1");
         assert!(kp.private != kp.public);
         // trailing whitespace can screw up the yaml
         assert!(!kp.public.ends_with("\n"));

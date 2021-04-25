@@ -59,7 +59,7 @@ fn main() {
         Ok(val) => do_token = val,
         Err(_e) => do_token = "".to_string(),
     }
-    if do_token == "" {
+    if do_token.is_empty() {
         error!("DIGITALOCEAN_API_TOKEN env var not set");
         std::process::exit(1);
     }
@@ -75,9 +75,9 @@ fn main() {
         let p = config::ServicePort::from_str_multi(port_spec);
         info!("ServicePorts: {:?}", p);
 
-        info!("Creating connection manager..");
+        info!("Creating server");
         let mgr = manager::InnisfreeManager::new(p);
-        info!("Bringing up manager..");
+        info!("Configuring server");
         mgr.up();
 
         let ip = &mgr.server.ipv4_address();

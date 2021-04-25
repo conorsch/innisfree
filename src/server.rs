@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::config::{make_config_dir, ServicePort};
-use crate::ssh::SSHKeypair;
+use crate::ssh::SshKeypair;
 use crate::wg::WireguardDevice;
 
 const DO_REGION: &str = "sfo2";
@@ -68,9 +68,8 @@ impl Droplet {
         let j: serde_json::Value = response.json().unwrap();
         let d: String = j["droplet"].to_string();
         let droplet: Droplet = serde_json::from_str(&d).unwrap();
-        debug!("Droplet created, waiting for boot");
-        let droplet = droplet.wait_for_boot();
-        return droplet;
+        debug!("Server created, waiting for networking");
+        droplet.wait_for_boot()
     }
 
     fn wait_for_boot(&self) -> Droplet {
@@ -84,7 +83,7 @@ impl Droplet {
             if droplet.status == "active" {
                 return droplet;
             } else {
-                info!("Droplet still booting, waiting...");
+                info!("Server still booting, waiting...");
             }
         }
     }
@@ -98,15 +97,15 @@ impl Droplet {
                 break;
             }
         }
-        return ip.to_string();
+        ip
     }
 }
 
 #[derive(Debug)]
 pub struct InnisfreeServer {
     pub services: Vec<ServicePort>,
-    pub ssh_client_keypair: SSHKeypair,
-    pub ssh_server_keypair: SSHKeypair,
+    pub ssh_client_keypair: SshKeypair,
+    pub ssh_server_keypair: SshKeypair,
     wg_device: WireguardDevice,
     droplet: Droplet,
     name: String,
@@ -142,16 +141,16 @@ struct CloudConfigUser {
 impl InnisfreeServer {
     pub fn new(services: Vec<ServicePort>, wg_device: WireguardDevice) -> InnisfreeServer {
         // Initialize variables outside struct, so we'll need to pass them around
-        let ssh_client_keypair = SSHKeypair::new("client");
-        let ssh_server_keypair = SSHKeypair::new("server");
+        let ssh_client_keypair = SshKeypair::new("client");
+        let ssh_server_keypair = SshKeypair::new("server");
         let user_data = generate_user_data(&ssh_client_keypair, &ssh_server_keypair, &wg_device);
         let droplet = Droplet::new(&user_data);
         InnisfreeServer {
-            services: services,
-            ssh_client_keypair: ssh_client_keypair,
-            ssh_server_keypair: ssh_server_keypair,
-            wg_device: wg_device,
-            droplet: droplet,
+            services,
+            ssh_client_keypair,
+            ssh_server_keypair,
+            wg_device,
+            droplet,
             name: "innisfree".to_string(),
         }
     }
@@ -159,11 +158,22 @@ impl InnisfreeServer {
         let droplet = &self.droplet;
         droplet.ipv4_address()
     }
+    pub fn write_user_data(&self) {
+        // Write full config locally for debugging;
+        let user_data = generate_user_data(
+            &self.ssh_client_keypair,
+            &self.ssh_server_keypair,
+            &self.wg_device,
+        );
+        let mut fpath = std::path::PathBuf::from(make_config_dir());
+        fpath.push("cloudinit.cfg");
+        std::fs::write(&fpath.to_str().unwrap(), &user_data).expect("Failed to create cloud-init");
+    }
 }
 
 pub fn generate_user_data(
-    ssh_client_keypair: &SSHKeypair,
-    ssh_server_keypair: &SSHKeypair,
+    ssh_client_keypair: &SshKeypair,
+    ssh_server_keypair: &SshKeypair,
     wg_device: &WireguardDevice,
 ) -> String {
     let user_data = include_str!("../files/cloudinit.cfg");
@@ -179,6 +189,14 @@ pub fn generate_user_data(
         ssh_server_keypair.private.to_string(),
     );
 
+    let wg = CloudConfigFile {
+        content: wg_device.config(),
+        owner: String::from("root:root"),
+        permissions: String::from("0644"),
+        path: String::from("/tmp/innisfree.conf"),
+    };
+    cloud_config.write_files.push(wg);
+
     // For debugging, add another pubkey
     // $ doctl compute ssh-key list -o json | jq -r .[].public_key
     // ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIlLuXP4H+Jrj7wiuaP18nam634kKSNVHJ0SisdFxv3v
@@ -192,14 +210,9 @@ pub fn generate_user_data(
     let cc_rendered_no_header = &cc_rendered.as_bytes()[4..];
     let cc_rendered = std::str::from_utf8(&cc_rendered_no_header).unwrap();
     let mut cc: String = String::from("#cloud-config");
-    cc.push_str("\n");
+    cc.push('\n');
     cc.push_str(&cc_rendered);
-    // Write full config locally for debugging;
-    let mut fpath = std::path::PathBuf::from(make_config_dir());
-    fpath.push("cloudinit.cfg");
-    std::fs::write(&fpath.to_str().unwrap(), &cc).expect("Failed to create cloud-init");
-
-    return cc;
+    cc
 }
 
 // The 'networks' field in the API response will be a nested object,
@@ -229,21 +242,18 @@ fn get_droplet(droplet: &Droplet) -> Droplet {
 
     let j: serde_json::Value = response.json().unwrap();
     let d: String = j["droplet"].to_string();
-    let droplet_new: Droplet = serde_json::from_str(&d).unwrap();
-    return droplet_new;
+    serde_json::from_str(&d).unwrap()
 }
 
 fn get_mock_droplet_json() -> String {
     let droplet_json = include_str!("../files/droplet.json");
-    let droplet_json = droplet_json.to_string();
-    return droplet_json;
+    droplet_json.to_string()
 }
 
 #[allow(dead_code)]
 fn _create_droplet() -> Droplet {
     let droplet_json = get_mock_droplet_json();
-    let droplet: Droplet = serde_json::from_str(&droplet_json).unwrap();
-    return droplet;
+    serde_json::from_str(&droplet_json).unwrap()
 }
 
 #[cfg(test)]
@@ -279,10 +289,14 @@ mod tests {
 
     #[test]
     fn cloudconfig_has_header() {
-        let kp1 = SSHKeypair::new("server-test1");
-        let kp2 = SSHKeypair::new("server-test2");
+        let kp1 = SshKeypair::new("server-test1");
+        let kp2 = SshKeypair::new("server-test2");
         let wg_hosts = _generate_hosts();
-        let wg_device = WireguardDevice::new("foo1", wg_hosts);
+        let wg_device = WireguardDevice {
+            name: String::from("foo1"),
+            interface: wg_hosts[1].clone(),
+            peer: wg_hosts[0].clone(),
+        };
         let user_data = generate_user_data(&kp1, &kp2, &wg_device);
         assert!(user_data.ends_with(""));
         assert!(user_data.starts_with("#cloud-config"));

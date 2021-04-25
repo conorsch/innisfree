@@ -43,4 +43,4 @@ install-deps:
 
 .PHONY: push
 push:
-	rsync -a --info=progress2 --delete-after /home/user/gits/innisfree-rust/ tau:/home/conor/innisfree-rust/
+	rsync -a --info=progress2 --exclude "target/*" --delete-after /home/user/gits/innisfree-rust/ tau:/home/conor/innisfree-rust/
