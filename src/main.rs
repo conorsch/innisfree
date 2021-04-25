@@ -22,7 +22,6 @@ fn main() {
     // value is if they're missing
     let env = Env::default().filter_or("RUST_LOG", "debug");
     env_logger::init_from_env(env);
-    info!("starting up");
     let matches = App::new("Innisfree")
         .version("0.1.1")
         .author("Conor Schaefer <conor@ruin.dev")
@@ -50,7 +49,7 @@ fn main() {
                         .short('f'),
                 ),
         )
-        .subcommand(App::new("ssh").about("Open interactive shell on cloud node, via SSH"))
+        .subcommand(App::new("ssh").about("Open interactive SSH shell on cloud node"))
         .subcommand(App::new("ip").about("Display IPv4 address for cloud node"))
         .get_matches();
 
@@ -76,16 +75,21 @@ fn main() {
         let p = config::ServicePort::from_str_multi(port_spec);
         info!("ServicePorts: {:?}", p);
 
-        let d = config::make_config_dir();
-        info!("Config dir: {:?}", d);
-
-        info!("Creating connection up manager..");
+        info!("Creating connection manager..");
         let mgr = manager::InnisfreeManager::new(p);
         info!("Bringing up manager..");
         mgr.up();
 
         let ip = &mgr.server.ipv4_address();
         info!("Server IPv4 address: {:?}", ip);
+    }
+
+    if let Some(ref _matches) = matches.subcommand_matches("ssh") {
+        warn!("Subcommand 'ssh' is only partially implemented; it assumes server exists");
+        let ip = manager::get_server_ip().unwrap();
+        info!("Found server IPv4 address: {:?}", ip);
+        debug!("Attempting to open interactive shell");
+        manager::open_shell();
     }
 
     // Continued program logic goes here...

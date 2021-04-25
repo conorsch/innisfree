@@ -33,7 +33,7 @@ impl InnisfreeManager {
         let cmd: Vec<&str> = vec!["cloud-init", "status", "--long", "--wait"];
         self.run_cmd(cmd);
     }
-    fn wait_for_ssh(&self) -> std::io::Result<()> {
+    fn wait_for_ssh(&self) {
         let mut dest_ip: String = self.server.ipv4_address();
         dest_ip.push_str(":22");
         loop {
@@ -41,15 +41,14 @@ impl InnisfreeManager {
             let stream = std::net::TcpStream::connect(&dest_ip);
             match stream {
                 Ok(_) => {
-                    debug!("SSH port is open");
+                    debug!("SSH port is open, proceeding");
                     break;
                 }
-                Err(e) => {
+                Err(_) => {
                     std::thread::sleep(std::time::Duration::from_secs(10));
                 }
             }
         }
-        Ok(())
     }
     pub fn known_hosts(&self) -> String {
         let ipv4_address = &self.server.ipv4_address();
@@ -84,4 +83,37 @@ impl InnisfreeManager {
             .output()
             .expect("SSH command failed");
     }
+}
+
+pub fn get_server_ip() -> Option<String> {
+    let mut fpath = std::path::PathBuf::from(make_config_dir());
+    fpath.push("known_hosts");
+    let known_hosts = std::fs::read_to_string(&fpath).unwrap();
+    let host_parts: Vec<&str> = known_hosts.split(" ").collect();
+    let ip: String = host_parts[0].to_string();
+    Some(ip)
+}
+
+pub fn open_shell() {
+    let mut client_key = std::path::PathBuf::from(make_config_dir());
+    client_key.push("innisfree-ssh-key-client");
+    let mut known_hosts = std::path::PathBuf::from(make_config_dir());
+    known_hosts.push("known_hosts");
+    let mut known_hosts_opt = "UserKnownHostsFile=".to_owned();
+    known_hosts_opt.push_str(known_hosts.to_str().unwrap());
+    let ipv4_address = get_server_ip().unwrap();
+
+    let cmd_args = vec![
+        "-l",
+        "innisfree",
+        "-i",
+        client_key.to_str().unwrap(),
+        "-o",
+        &known_hosts_opt,
+        &ipv4_address,
+    ];
+    std::process::Command::new("ssh")
+        .args(cmd_args)
+        .status()
+        .expect("SSH command failed");
 }

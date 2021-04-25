@@ -32,7 +32,6 @@ fn create_ssh_keypair(prefix: &str) -> SSHKeypair {
         .unwrap()
         .to_string();
     let pubkey_filepath: String = privkey_filepath.clone() + ".pub";
-    debug!("Removing pre-existing ssh key files...");
     if Path::new(&privkey_filepath).exists() {
         let _ = remove_file(&privkey_filepath);
     }
@@ -40,7 +39,6 @@ fn create_ssh_keypair(prefix: &str) -> SSHKeypair {
         let _ = remove_file(&pubkey_filepath);
     }
 
-    debug!("Generating new keys via ssh-keygen...");
     Command::new("ssh-keygen")
         .args(&[
             "-t",
