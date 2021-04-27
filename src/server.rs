@@ -17,7 +17,7 @@ use serde_json::json;
 
 use crate::config::{make_config_dir, ServicePort};
 use crate::ssh::SshKeypair;
-use crate::wg::WireguardDevice;
+use crate::wg::{WireguardDevice, WIREGUARD_LOCAL_IP};
 
 const DO_REGION: &str = "sfo2";
 const DO_SIZE: &str = "s-1vcpu-1gb";
@@ -143,7 +143,12 @@ impl InnisfreeServer {
         // Initialize variables outside struct, so we'll need to pass them around
         let ssh_client_keypair = SshKeypair::new("client");
         let ssh_server_keypair = SshKeypair::new("server");
-        let user_data = generate_user_data(&ssh_client_keypair, &ssh_server_keypair, &wg_device);
+        let user_data = generate_user_data(
+            &ssh_client_keypair,
+            &ssh_server_keypair,
+            &wg_device,
+            &services,
+        );
         let droplet = Droplet::new(&user_data);
         InnisfreeServer {
             services,
@@ -164,6 +169,7 @@ impl InnisfreeServer {
             &self.ssh_client_keypair,
             &self.ssh_server_keypair,
             &self.wg_device,
+            &self.services,
         );
         let mut fpath = std::path::PathBuf::from(make_config_dir());
         fpath.push("cloudinit.cfg");
@@ -175,6 +181,7 @@ pub fn generate_user_data(
     ssh_client_keypair: &SshKeypair,
     ssh_server_keypair: &SshKeypair,
     wg_device: &WireguardDevice,
+    services: &[ServicePort],
 ) -> String {
     let user_data = include_str!("../files/cloudinit.cfg");
     let user_data = user_data.to_string();
@@ -197,6 +204,14 @@ pub fn generate_user_data(
     };
     cloud_config.write_files.push(wg);
 
+    let nginx = CloudConfigFile {
+        content: nginx_streams(services),
+        owner: String::from("root:root"),
+        permissions: String::from("0644"),
+        path: String::from("/etc/nginx/conf.d/stream/innisfree.conf"),
+    };
+    cloud_config.write_files.push(nginx);
+
     // For debugging, add another pubkey
     // $ doctl compute ssh-key list -o json | jq -r .[].public_key
     // ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIlLuXP4H+Jrj7wiuaP18nam634kKSNVHJ0SisdFxv3v
@@ -213,6 +228,15 @@ pub fn generate_user_data(
     cc.push('\n');
     cc.push_str(&cc_rendered);
     cc
+}
+
+fn nginx_streams(services: &[ServicePort]) -> String {
+    let nginx_config = include_str!("../files/stream.conf.j2");
+    let mut context = tera::Context::new();
+    context.insert("services", services);
+    context.insert("dest_ip", WIREGUARD_LOCAL_IP);
+    // Disable autoescaping, since it breaks wg key contents
+    tera::Tera::one_off(nginx_config, &context, false).unwrap()
 }
 
 // The 'networks' field in the API response will be a nested object,
@@ -297,7 +321,8 @@ mod tests {
             interface: wg_hosts[1].clone(),
             peer: wg_hosts[0].clone(),
         };
-        let user_data = generate_user_data(&kp1, &kp2, &wg_device);
+        let ports = vec![];
+        let user_data = generate_user_data(&kp1, &kp2, &wg_device, &ports);
         assert!(user_data.ends_with(""));
         assert!(user_data.starts_with("#cloud-config"));
         assert!(user_data.starts_with("#cloud-config\n"));

@@ -3,9 +3,15 @@ DEFAULT_GOAL := "build"
 .PHONY: all
 all: lint test build
 
+
+.PHONY: run
+run: build
+	./i up
+
 .PHONY: build
-build:
-	cargo run -- up
+build: install-deps
+	cargo build
+	sudo setcap CAP_NET_BIND_SERVICE=+ep ./target/debug/innisfree
 
 .PHONY: test
 test:
@@ -27,10 +33,6 @@ docker:
 	docker build . -f Dockerfile -t docker.ruin.dev/innisfree
 	docker push docker.ruin.dev/innisfree-rust
 
-.PHONY: run
-run: docker
-	docker run docker.ruin.dev/innisfree-rust
-
 .PHONY: deb
 deb:
 	dpkg-buildpackage -us -uc
@@ -39,7 +41,14 @@ deb:
 
 .PHONY: install-deps
 install-deps:
-	sudo apt install -y libssl-dev
+	sudo apt install -y libssl-dev libcap2-bin
+
+.PHONY: ci
+ci: install-deps lint test
+	cargo check
+	cargo check --release
+	cargo build
+	cargo build --release
 
 .PHONY: push
 push:

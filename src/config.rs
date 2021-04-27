@@ -1,9 +1,10 @@
 extern crate home;
+use serde::Serialize;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ServicePort {
-    port: i32,
-    protocol: String,
+    pub port: i32,
+    pub protocol: String,
 }
 
 impl ServicePort {

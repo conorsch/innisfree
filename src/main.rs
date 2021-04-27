@@ -1,21 +1,23 @@
 use clap::App;
 use clap::Arg;
 use std::env;
+use std::error::Error;
+
+#[macro_use]
+extern crate log;
+use env_logger::Env;
 
 // Innisfree imports
 mod config;
 mod manager;
+mod proxy;
 mod server;
 mod ssh;
 mod wg;
-// use server;
+use crate::wg::WIREGUARD_LOCAL_IP;
 
-#[macro_use]
-extern crate log;
-
-use env_logger::Env;
-
-fn main() {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     // Activate env_logger https://github.com/env-logger-rs/env_logger
     // The `Env` lets us tweak what the environment
     // variables to read are and what the default
@@ -32,7 +34,7 @@ fn main() {
                 .arg(
                     Arg::new("ports")
                         .about("list of service ports to forward, comma-separated")
-                        .default_value("80/TCP,443/TCP")
+                        .default_value("8080/TCP,443/TCP")
                         .short('p'),
                 )
                 .arg(
@@ -51,54 +53,73 @@ fn main() {
         )
         .subcommand(App::new("ssh").about("Open interactive SSH shell on cloud node"))
         .subcommand(App::new("ip").about("Display IPv4 address for cloud node"))
+        .subcommand(
+            App::new("proxy")
+                .about("Start process to forward traffic, assumes tunnel already up")
+                .arg(
+                    Arg::new("ports")
+                        .about("list of service ports to forward, comma-separated")
+                        .default_value("8080/TCP,443/TCP")
+                        .short('p'),
+                )
+                .arg(
+                    Arg::new("dest-ip")
+                        .about("Ipv4 Address of proxy destination, whither traffic is forwarded")
+                        .default_value("127.0.0.1")
+                        .short('d'),
+                ),
+        )
         .get_matches();
 
-    // Ensure DigitalOcean API token is defined
-    let do_token;
-    match env::var("DIGITALOCEAN_API_TOKEN") {
-        Ok(val) => do_token = val,
-        Err(_e) => do_token = "".to_string(),
-    }
-    if do_token.is_empty() {
-        error!("DIGITALOCEAN_API_TOKEN env var not set");
-        std::process::exit(1);
-    }
-
-    // You can check for the existence of subcommands, and if found use their
-    // matches just as you would the top level app
+    // Primary subcommand. Soup to nuts experience.
     if let Some(ref matches) = matches.subcommand_matches("up") {
-        warn!("Subcommand 'up' is only partially implemented");
-        if !matches.is_present("dest-ip") {
-            warn!("Yo bro, the dest-ip is required...");
+        // Ensure DigitalOcean API token is defined
+        let do_token;
+        match env::var("DIGITALOCEAN_API_TOKEN") {
+            Ok(val) => do_token = val,
+            Err(_e) => do_token = "".to_string(),
         }
+        if do_token.is_empty() {
+            error!("DIGITALOCEAN_API_TOKEN env var not set");
+            std::process::exit(1);
+        }
+
+        warn!("Subcommand 'up' is only partially implemented; you must run 'proxy' separately");
+        let dest_ip = matches.value_of("dest-ip").unwrap().to_owned();
         let port_spec = matches.value_of("ports").unwrap();
-        let p = config::ServicePort::from_str_multi(port_spec);
-        info!("ServicePorts: {:?}", p);
+        let services = config::ServicePort::from_str_multi(port_spec);
+        info!("Will provide proxies for {:?}", services);
 
         info!("Creating server");
-        let mgr = manager::InnisfreeManager::new(p);
+        let mgr = manager::InnisfreeManager::new(services);
         info!("Configuring server");
         mgr.up();
 
         let ip = &mgr.server.ipv4_address();
         info!("Server IPv4 address: {:?}", ip);
         debug!("Try logging in with 'innisfree ssh'");
-    }
-
-    if let Some(ref _matches) = matches.subcommand_matches("ssh") {
+        debug!("Etnering proxy jawns");
+        let local_ip = String::from(WIREGUARD_LOCAL_IP);
+        manager::run_proxy(local_ip, dest_ip, mgr.services).await;
+    } else if let Some(ref _matches) = matches.subcommand_matches("ssh") {
         warn!("Subcommand 'ssh' is only partially implemented; it assumes server exists");
         let ip = manager::get_server_ip().unwrap();
         info!("Found server IPv4 address: {:?}", ip);
         debug!("Attempting to open interactive shell");
         manager::open_shell();
-    }
-
-    if let Some(ref _matches) = matches.subcommand_matches("ip") {
+    } else if let Some(ref _matches) = matches.subcommand_matches("ip") {
         warn!("Subcommand 'ip' is only partially implemented; it assumes server exists");
         let ip = manager::get_server_ip().unwrap();
-        debug!("Found ip address: {:?}", ip);
         println!("{}", ip);
+    } else if let Some(ref matches) = matches.subcommand_matches("proxy") {
+        warn!("Subcommand 'proxy' only intended for debugging, it assumes tunnel exists already");
+        let dest_ip = matches.value_of("dest-ip").unwrap().to_owned();
+        let port_spec = matches.value_of("ports").unwrap();
+        let ports = config::ServicePort::from_str_multi(port_spec);
+        let local_ip = String::from(WIREGUARD_LOCAL_IP);
+
+        manager::run_proxy(local_ip, dest_ip, ports).await;
     }
 
-    // Continued program logic goes here...
+    Ok(())
 }

@@ -1,10 +1,12 @@
 use crate::config::{make_config_dir, ServicePort};
+use crate::proxy::proxy_handler;
 use crate::server::InnisfreeServer;
 use crate::wg::WireguardManager;
+use futures::future::join_all;
 
 #[derive(Debug)]
 pub struct InnisfreeManager {
-    ports: Vec<ServicePort>,
+    pub services: Vec<ServicePort>,
     dest_ip: String,
     floating_ip: Option<String>,
     pub server: InnisfreeServer,
@@ -12,11 +14,11 @@ pub struct InnisfreeManager {
 }
 
 impl InnisfreeManager {
-    pub fn new(ports: Vec<ServicePort>) -> InnisfreeManager {
+    pub fn new(services: Vec<ServicePort>) -> InnisfreeManager {
         let wg = WireguardManager::new();
-        let server = InnisfreeServer::new(ports, wg.clone().wg_remote_device);
+        let server = InnisfreeServer::new(services, wg.clone().wg_remote_device);
         InnisfreeManager {
-            ports: server.services.to_vec(),
+            services: server.services.to_vec(),
             dest_ip: "127.0.0.1".to_string(),
             floating_ip: Some("".to_string()),
             server,
@@ -45,7 +47,6 @@ impl InnisfreeManager {
         let mut dest_ip: String = self.server.ipv4_address();
         dest_ip.push_str(":22");
         loop {
-            debug!("Waiting for ssh (polling socket {})...", dest_ip);
             let stream = std::net::TcpStream::connect(&dest_ip);
             match stream {
                 Ok(_) => {
@@ -53,6 +54,7 @@ impl InnisfreeManager {
                     break;
                 }
                 Err(_) => {
+                    debug!("Waiting for ssh (polling socket {})...", dest_ip);
                     std::thread::sleep(std::time::Duration::from_secs(10));
                 }
             }
@@ -173,4 +175,21 @@ pub fn open_shell() {
         .args(cmd_args)
         .status()
         .expect("SSH command failed");
+}
+
+pub async fn run_proxy(local_ip: String, dest_ip: String, services: Vec<ServicePort>) {
+    // We'll kick off a dedicated proxy for each service,
+    // and collect the handles to await them all together, concurrently.
+    let mut tasks = vec![];
+    for s in services {
+        let listen_addr = format!("{}:{}", local_ip, s.port.clone());
+        let dest_addr = format!("{}:{}", dest_ip, s.port.clone());
+        let h = proxy_handler(listen_addr, dest_addr);
+        let ip = get_server_ip().unwrap();
+        debug!("Try accessing: {}:{} ({})", ip, s.port, s.protocol);
+        tasks.push(h);
+    }
+    debug!("Joining all service proxies, blocking...");
+    join_all(tasks).await;
+    warn!("Join of all service proxies returned, surprisingly");
 }

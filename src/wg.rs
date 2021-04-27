@@ -12,8 +12,8 @@ use serde::Serialize;
 // Cutting corners here. IP addresses should be customizable,
 // and be a valid /30.
 const WIREGUARD_LISTEN_PORT: i32 = 51820;
-const WIREGUARD_LOCAL_IP: &str = "10.50.0.1";
-const WIREGUARD_REMOTE_IP: &str = "10.50.0.2";
+pub const WIREGUARD_LOCAL_IP: &str = "10.50.0.1";
+pub const WIREGUARD_REMOTE_IP: &str = "10.50.0.2";
 
 #[derive(Debug, Serialize, Clone)]
 pub struct WireguardKeypair {
