@@ -20,6 +20,10 @@ build: install-deps
 test:
 	cargo test
 
+.PHONY: install
+install: deb
+	sudo dpkg -i target/debian/innisfree*.deb
+
 .PHONY: lint
 lint:
 	cargo fmt
