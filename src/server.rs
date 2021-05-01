@@ -163,6 +163,8 @@ impl InnisfreeServer {
         let droplet = &self.droplet;
         droplet.ipv4_address()
     }
+    // Dead code because it's debug-only, might want again.
+    #[allow(dead_code)]
     pub fn write_user_data(&self) {
         // Write full config locally for debugging;
         let user_data = generate_user_data(
@@ -267,17 +269,6 @@ fn get_droplet(droplet: &Droplet) -> Droplet {
     let j: serde_json::Value = response.json().unwrap();
     let d: String = j["droplet"].to_string();
     serde_json::from_str(&d).unwrap()
-}
-
-fn get_mock_droplet_json() -> String {
-    let droplet_json = include_str!("../files/droplet.json");
-    droplet_json.to_string()
-}
-
-#[allow(dead_code)]
-fn _create_droplet() -> Droplet {
-    let droplet_json = get_mock_droplet_json();
-    serde_json::from_str(&droplet_json).unwrap()
 }
 
 #[cfg(test)]

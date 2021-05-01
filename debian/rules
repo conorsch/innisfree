@@ -3,17 +3,4 @@
 export SOURCE_DATE_EPOCH ?= $(shell dpkg-parsechangelog -STimestamp)
 
 %:
-	dh $@ --with python-virtualenv
-
-override_dh_virtualenv:
-	dh_virtualenv \
-		--python /usr/bin/python3 \
-		--use-system-packages \
-		--requirements requirements.txt
-
-
-override_dh_strip_nondeterminism:
-	find ./debian/ -type f -name '*.pyc' -delete
-	find ./debian/ -type f -name 'pip-selfcheck.json' -delete
-	find -type f -name RECORD -exec sed -i -e '/.*\.pyc.*/d' {} +
-	dh_strip_nondeterminism $@
+	echo "Now building"

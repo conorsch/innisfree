@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // The `Env` lets us tweak what the environment
     // variables to read are and what the default
     // value is if they're missing
-    let env = Env::default().filter_or("RUST_LOG", "debug");
+    let env = Env::default().filter_or("RUST_LOG", "debug,reqwest=info");
     env_logger::init_from_env(env);
     let matches = App::new("Innisfree")
         .version("0.1.1")
@@ -35,12 +35,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Arg::new("ports")
                         .about("list of service ports to forward, comma-separated")
                         .default_value("8080/TCP,443/TCP")
+                        .long("ports")
                         .short('p'),
                 )
                 .arg(
                     Arg::new("dest-ip")
                         .about("Ipv4 Address of proxy destination, whither traffic is forwarded")
                         .default_value("127.0.0.1")
+                        .long("dest-ip")
                         .short('d'),
                 )
                 .arg(
@@ -48,6 +50,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         .about("Declare pre-existing Floating IP to attach to Droplet")
                         // Figure out how to default to an empty string
                         .default_value("None")
+                        .long("floating-ip")
                         .short('f'),
                 ),
         )
@@ -60,12 +63,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Arg::new("ports")
                         .about("list of service ports to forward, comma-separated")
                         .default_value("8080/TCP,443/TCP")
+                        .long("ports")
                         .short('p'),
                 )
                 .arg(
                     Arg::new("dest-ip")
                         .about("Ipv4 Address of proxy destination, whither traffic is forwarded")
                         .default_value("127.0.0.1")
+                        .long("dest-ip")
                         .short('d'),
                 ),
         )
@@ -92,13 +97,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         info!("Creating server");
         let mgr = manager::InnisfreeManager::new(services);
-        info!("Configuring server");
+        info!("Configuring server. ETA: 5m or so.");
         mgr.up();
 
         let ip = &mgr.server.ipv4_address();
-        info!("Server IPv4 address: {:?}", ip);
+        info!("Server ready! IPv4 address: {:?}", ip);
         debug!("Try logging in with 'innisfree ssh'");
-        debug!("Etnering proxy jawns");
         let local_ip = String::from(WIREGUARD_LOCAL_IP);
         manager::run_proxy(local_ip, dest_ip, mgr.services).await;
     } else if let Some(ref _matches) = matches.subcommand_matches("ssh") {

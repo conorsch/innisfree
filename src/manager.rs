@@ -29,7 +29,7 @@ impl InnisfreeManager {
         self.wait_for_ssh();
         self.wait_for_cloudinit();
         // Write out cloudinit config locally, for debugging
-        self.server.write_user_data();
+        // self.server.write_user_data();
         let ip = self.server.ipv4_address();
         let mut wg = self.wg.wg_local_device.clone();
         wg.peer.endpoint = ip;
@@ -61,7 +61,6 @@ impl InnisfreeManager {
         }
     }
     fn test_connection(&self) {
-        debug!("Pinging the remote connection to confirm tunnel open");
         let ip = &self.wg.wg_remote_ip;
         let cmd = "ping";
         let cmd_args = vec!["-c1", "-w5", &ip];
@@ -69,10 +68,17 @@ impl InnisfreeManager {
             .args(cmd_args)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .status()
-            .expect("Failed to ping remote Wireguard interface, tunnel broken");
-        debug!("Ping check for connectivity returned: {}", status);
-        assert!(status.success());
+            .status();
+        match status {
+            Ok(status) => {
+                debug!("Confirmed tunnel is established, ping returned: {}", status);
+            }
+            Err(_) => {
+                error!("Failed to ping remote Wireguard interface, tunnel broken");
+                // Unpleasant to panic here, should be returning results.
+                assert!(status.unwrap().success());
+            }
+        }
     }
     pub fn bring_up_remote_wg(&self) {
         debug!("Bringing up remote Wireguard interface");
@@ -95,7 +101,7 @@ impl InnisfreeManager {
             .expect("Failed to bring up local Wireguard interface");
     }
     pub fn bring_down_local_wg(&self) {
-        debug!("Bringing down local Wireguard interface");
+        debug!("Removing any previous local Wireguard onfig");
         let cmd = "wg-quick";
         let mut fpath = std::path::PathBuf::from(make_config_dir());
         fpath.push("innisfree.conf");
@@ -105,7 +111,7 @@ impl InnisfreeManager {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
-            .expect("Failed to bring up local Wireguard interface");
+            .expect("Failed to remove local Wireguard interface");
     }
     pub fn known_hosts(&self) -> String {
         let ipv4_address = &self.server.ipv4_address();
@@ -185,11 +191,10 @@ pub async fn run_proxy(local_ip: String, dest_ip: String, services: Vec<ServiceP
         let listen_addr = format!("{}:{}", local_ip, s.port.clone());
         let dest_addr = format!("{}:{}", dest_ip, s.port.clone());
         let h = proxy_handler(listen_addr, dest_addr);
-        let ip = get_server_ip().unwrap();
-        debug!("Try accessing: {}:{} ({})", ip, s.port, s.protocol);
+        // let ip = get_server_ip().unwrap();
+        // debug!("Try accessing: {}:{} ({})", ip, s.port, s.protocol);
         tasks.push(h);
     }
-    debug!("Joining all service proxies, blocking...");
     join_all(tasks).await;
     warn!("Join of all service proxies returned, surprisingly");
 }

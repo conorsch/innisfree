@@ -1,8 +1,11 @@
-DEFAULT_GOAL := "build"
+DEFAULT_GOAL := "none"
+
+.PHONY: none
+none:
+
 
 .PHONY: all
 all: lint test build
-
 
 .PHONY: run
 run: build
@@ -35,13 +38,12 @@ docker:
 
 .PHONY: deb
 deb:
-	dpkg-buildpackage -us -uc
-	mv ../innisfree*_amd64.deb dist/
-	find dist/ -type f -iname 'innisfree*.deb' | sort -n
+	cargo deb
 
 .PHONY: install-deps
 install-deps:
-	sudo apt install -y libssl-dev libcap2-bin
+	sudo apt install -y libssl-dev libcap2-bin reprotest
+	# cargo install cargo-deb
 
 .PHONY: ci
 ci: install-deps lint test
@@ -49,7 +51,17 @@ ci: install-deps lint test
 	cargo check --release
 	cargo build
 	cargo build --release
+	$(MAKE) deb
+
+.PHONY: reprotest
+reprotest: install-deps
+	reprotest -c "make build" . "target/debug/innisfree"
 
 .PHONY: push
 push:
 	rsync -a --info=progress2 --exclude "target/*" --delete-after /home/user/gits/innisfree-rust/ tau:/home/conor/innisfree-rust/
+
+.PHONY: deploy
+deploy: deb
+	rsync -a --info=progress2 -e ssh /home/user/gits/innisfree-rust/target/debian/innisfree_0.1.1_amd64.deb baldur:pkgs/
+	ssh baldur "sudo dpkg -i pkgs/innisfree*.deb"

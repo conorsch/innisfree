@@ -1,7 +1,4 @@
 #!/bin/sh
 
-
 # Permit binding to ports below 1024 (e.g. 80 & 443)
-setcap CAP_NET_BIND_SERVICE=+ep /usr/bin/python3.7
-ln -s /opt/venvs/innisfree/bin/innisfree -f /usr/bin/innisfree
-chmod 0755 /opt/venvs/innisfree/bin/innisfree
+setcap CAP_NET_BIND_SERVICE=+ep /usr/bin/innisfree
