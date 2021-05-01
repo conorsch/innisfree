@@ -1,6 +1,8 @@
-use std::fs::{read_to_string, remove_file};
+use std::fs::read_to_string;
 use std::path::Path;
 use std::process::Command;
+
+extern crate tempfile;
 
 use crate::config::make_config_dir;
 
@@ -9,33 +11,48 @@ pub struct SshKeypair {
     prefix: String,
     pub private: String,
     pub public: String,
-    // TODO: type filepath as Path
-    pub filepath: String,
 }
 
 impl SshKeypair {
     pub fn new(prefix: &str) -> SshKeypair {
         create_ssh_keypair(prefix)
     }
+
+    // Builds predictable filename for use in writing
+    fn filename(&self) -> String {
+        let mut key_name = String::from(&self.prefix);
+        key_name.push('_');
+        key_name.push_str("id_ed25519");
+        key_name
+    }
+    // Store keypair on disk, in config dir
+    pub fn write_locally(&self) -> String {
+        let config_dir = make_config_dir();
+        let key_name = self.filename();
+        let privkey_filepath: String = Path::new(&config_dir)
+            .join(key_name)
+            .to_str()
+            .unwrap()
+            .to_string();
+        let pubkey_filepath: String = privkey_filepath.clone() + ".pub";
+        std::fs::write(&privkey_filepath, &self.private).expect("Failed to write SSH privkey");
+        std::fs::write(&pubkey_filepath, &self.private).expect("Failed to write SSH privkey");
+        privkey_filepath
+    }
 }
 
 fn create_ssh_keypair(prefix: &str) -> SshKeypair {
     // Really clumsy with Path & PathBuf, so converting everything to Strings for now
-    let config_dir = make_config_dir();
-    let mut key_name = String::from(prefix);
-    key_name.push('_');
-    key_name.push_str("id_ed25519");
-    let privkey_filepath: String = Path::new(&config_dir)
-        .join(key_name)
-        .to_str()
-        .unwrap()
-        .to_string();
+    let tmpfile = tempfile::NamedTempFile::new().unwrap();
+    let tmpfile = tmpfile.path();
+    let privkey_filepath = String::from(tmpfile.to_str().unwrap());
     let pubkey_filepath: String = privkey_filepath.clone() + ".pub";
+
+    // ssh-keygen won't clobber, requires interactive 'y' to confirm.
+    // so delete the file beforehand, then it'll create happily.
+    // tempfile will still be cleaned up when dropped
     if Path::new(&privkey_filepath).exists() {
-        let _ = remove_file(&privkey_filepath);
-    }
-    if Path::new(&pubkey_filepath).exists() {
-        let _ = remove_file(&pubkey_filepath);
+        let _ = std::fs::remove_file(&privkey_filepath);
     }
 
     Command::new("ssh-keygen")
@@ -62,7 +79,6 @@ fn create_ssh_keypair(prefix: &str) -> SshKeypair {
         prefix: prefix.to_string(),
         private: privkey,
         public: pubkey,
-        filepath: privkey_filepath,
     }
 }
 

@@ -126,7 +126,7 @@ impl InnisfreeManager {
         return fpath.to_str().unwrap().to_string();
     }
     pub fn run_cmd(&self, cmd: Vec<&str>) {
-        let ssh_kp = &self.server.ssh_client_keypair.filepath;
+        let ssh_kp = &self.server.ssh_client_keypair.write_locally();
         let known_hosts = &self.known_hosts();
         let mut known_hosts_opt = "UserKnownHostsFile=".to_owned();
         known_hosts_opt.push_str(known_hosts);

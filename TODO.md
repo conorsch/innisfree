@@ -28,9 +28,11 @@
 * [x] Port deb pkg logic for rust
 * [x] Pare down Cargo.toml proxy code
 
-* [ ] SSH should use tmpfiles, not clobber primary dir
+* [x] SSH should use tmpfiles, not clobber primary dir
 * [ ] Package upgrade should be async
 * [ ] Add cleanup methods
+* [ ] Catch ctrl+c to cleanup
 * [x] Tune nginx config, workers auto
+* [ ] Wireguard config should be a /30
 
 * [ ] Add iptables rules to wg to block all but authorized
