@@ -50,6 +50,14 @@ pub fn make_config_dir() -> String {
     config_dir.to_str().unwrap().to_string()
 }
 
+pub fn clean_config_dir() {
+    let config_dir = make_config_dir();
+    for f in std::fs::read_dir(config_dir).unwrap() {
+        let f = f.unwrap();
+        std::fs::remove_file(f.path()).unwrap();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

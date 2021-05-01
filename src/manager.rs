@@ -1,4 +1,4 @@
-use crate::config::{make_config_dir, ServicePort};
+use crate::config::{clean_config_dir, make_config_dir, ServicePort};
 use crate::proxy::proxy_handler;
 use crate::server::InnisfreeServer;
 use crate::wg::WireguardManager;
@@ -15,6 +15,8 @@ pub struct InnisfreeManager {
 
 impl InnisfreeManager {
     pub fn new(services: Vec<ServicePort>) -> InnisfreeManager {
+        debug!("Cleaning up any previous config...");
+        clean_config_dir();
         let wg = WireguardManager::new();
         let server = InnisfreeServer::new(services, wg.clone().wg_remote_device);
         InnisfreeManager {

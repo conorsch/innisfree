@@ -30,7 +30,9 @@
 
 * [x] SSH should use tmpfiles, not clobber primary dir
 * [ ] Package upgrade should be async
-* [ ] Add cleanup methods
+* [x] Add cleanup methods - dir
+* [ ] Add cleanup methods - droplet
+* [ ] Add cleanup methods - wg
 * [ ] Catch ctrl+c to cleanup
 * [x] Tune nginx config, workers auto
 * [ ] Wireguard config should be a /30
