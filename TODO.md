@@ -25,12 +25,12 @@
 * [x] Wire up "proxy" subcommand
 * [x] Integrate proxy in up subcommand
 
-* [ ] Port deb pkg logic for rust
-* [ ] Pare down Cargo.toml proxy code
+* [x] Port deb pkg logic for rust
+* [x] Pare down Cargo.toml proxy code
 
 * [ ] SSH should use tmpfiles, not clobber primary dir
 * [ ] Package upgrade should be async
 * [ ] Add cleanup methods
-* [ ] Tune nginx config, workers auto
+* [x] Tune nginx config, workers auto
 
 * [ ] Add iptables rules to wg to block all but authorized

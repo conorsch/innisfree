@@ -8,6 +8,7 @@ extern crate log;
 use env_logger::Env;
 
 // Innisfree imports
+mod cloudinit;
 mod config;
 mod manager;
 mod proxy;
@@ -26,7 +27,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init_from_env(env);
     let matches = App::new("Innisfree")
         .version("0.1.1")
-        .author("Conor Schaefer <conor@ruin.dev")
         .about("Exposes local services on a public IPv4 address, via DigitalOcean")
         .subcommand(
             App::new("up")

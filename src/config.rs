@@ -1,6 +1,9 @@
 extern crate home;
 use serde::Serialize;
 
+// Describes a request for a port to expose.
+// Will be passed around to nginx and wireguard configuration logic
+// to build out the tunnel.
 #[derive(Debug, Clone, Serialize)]
 pub struct ServicePort {
     pub port: i32,
