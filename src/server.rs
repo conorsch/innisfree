@@ -78,6 +78,10 @@ impl InnisfreeServer {
         fpath.push("cloudinit.cfg");
         std::fs::write(&fpath.to_str().unwrap(), &user_data).expect("Failed to create cloud-init");
     }
+    pub fn destroy(&self) {
+        // Destroys backing droplet
+        self.droplet.destroy();
+    }
 }
 
 // Representation of a DigitalOcean Droplet, i.e. cloud VM.
@@ -148,6 +152,9 @@ impl Droplet {
         }
         ip
     }
+    pub fn destroy(&self) {
+        destroy_droplet(&self);
+    }
 }
 
 // Polls a droplet resource to get the latest data. Used during wait for boot,
@@ -162,4 +169,21 @@ fn get_droplet(droplet: &Droplet) -> Droplet {
     let j: serde_json::Value = response.json().unwrap();
     let d: String = j["droplet"].to_string();
     serde_json::from_str(&d).unwrap()
+}
+
+// Calls the API to destroy a droplet.
+fn destroy_droplet(droplet: &Droplet) {
+    let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
+    let request_url = DO_API_BASE_URL.to_owned() + "/" + &droplet.id.to_string();
+
+    let client = reqwest::blocking::Client::new();
+    let response = client.delete(request_url).bearer_auth(api_key).send();
+    match response {
+        Ok(_) => {
+            debug!("Droplet successfully destroyed");
+        }
+        Err(e) => {
+            error!("Failed to destroy droplet: {}", e);
+        }
+    }
 }

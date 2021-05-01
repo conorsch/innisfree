@@ -2,10 +2,13 @@ use clap::App;
 use clap::Arg;
 use std::env;
 use std::error::Error;
+use std::sync::Arc;
 
 #[macro_use]
 extern crate log;
 use env_logger::Env;
+
+extern crate ctrlc;
 
 // Innisfree imports
 mod cloudinit;
@@ -89,22 +92,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
             std::process::exit(1);
         }
 
-        warn!("Subcommand 'up' is only partially implemented; you must run 'proxy' separately");
         let dest_ip = matches.value_of("dest-ip").unwrap().to_owned();
         let port_spec = matches.value_of("ports").unwrap();
         let services = config::ServicePort::from_str_multi(port_spec);
         info!("Will provide proxies for {:?}", services);
 
         info!("Creating server");
-        let mgr = manager::InnisfreeManager::new(services);
-        info!("Configuring server. ETA: 5m or so.");
+        let mgr = Arc::new(manager::InnisfreeManager::new(services));
+        info!("Configuring server");
         mgr.up();
+
+        let mgr_ctrlc = mgr.clone();
+        ctrlc::set_handler(move || {
+            warn!("Caught ctrl+c, exiting gracefully");
+            mgr_ctrlc.clean();
+            debug!("Clean up complete, exiting!");
+            std::process::exit(0);
+        })
+        .expect("Error setting Ctrl-C handler");
 
         let ip = &mgr.server.ipv4_address();
         info!("Server ready! IPv4 address: {:?}", ip);
         debug!("Try logging in with 'innisfree ssh'");
         let local_ip = String::from(WIREGUARD_LOCAL_IP);
-        manager::run_proxy(local_ip, dest_ip, mgr.services).await;
+        manager::run_proxy(local_ip, dest_ip, mgr.services.clone()).await;
     } else if let Some(ref _matches) = matches.subcommand_matches("ssh") {
         warn!("Subcommand 'ssh' is only partially implemented; it assumes server exists");
         let ip = manager::get_server_ip().unwrap();
@@ -121,7 +132,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let port_spec = matches.value_of("ports").unwrap();
         let ports = config::ServicePort::from_str_multi(port_spec);
         let local_ip = String::from(WIREGUARD_LOCAL_IP);
-
         manager::run_proxy(local_ip, dest_ip, ports).await;
     }
 
