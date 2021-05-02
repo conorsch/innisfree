@@ -42,3 +42,7 @@
 * [x] Wire up floating ip
 
 * [.] Add iptables rules to wg to block all but authorized
+* [x] Make ip command fail if server doesnt exit
+* [x] Make ssh command fail if server doesnt exit
+* [.] Add lots of results for better error handling
+* [ ] Add doctor subcommand for checking

@@ -2,7 +2,7 @@ use std::io::prelude::*;
 use std::process::{Command, Stdio};
 use std::str;
 
-use crate::config::make_config_dir;
+use crate::config::{make_config_dir, InnisfreeError};
 
 extern crate tera;
 
@@ -22,13 +22,16 @@ pub struct WireguardKeypair {
 }
 
 impl WireguardKeypair {
-    pub fn new() -> WireguardKeypair {
-        let privkey = generate_wireguard_privkey();
-        let pubkey = generate_wireguard_pubkey(&privkey);
-        WireguardKeypair {
+    pub fn new() -> Result<WireguardKeypair, InnisfreeError> {
+        let privkey = match generate_wireguard_privkey() {
+            Ok(p) => p,
+            Err(_) => return Err(InnisfreeError::CommandFailure),
+        };
+        let pubkey = derive_wireguard_pubkey(&privkey)?;
+        Ok(WireguardKeypair {
             private: privkey,
             public: pubkey,
-        }
+        })
     }
 }
 
@@ -80,10 +83,10 @@ pub struct WireguardManager {
 }
 
 impl WireguardManager {
-    pub fn new() -> WireguardManager {
+    pub fn new() -> Result<WireguardManager, InnisfreeError> {
         let wg_local_ip = WIREGUARD_LOCAL_IP.to_string();
         let wg_local_name = "innisfree_local".to_string();
-        let wg_local_keypair = WireguardKeypair::new();
+        let wg_local_keypair = WireguardKeypair::new()?;
         let wg_local_host = WireguardHost {
             name: wg_local_name.clone(),
             address: wg_local_ip.clone(),
@@ -94,7 +97,7 @@ impl WireguardManager {
 
         let wg_remote_ip = WIREGUARD_REMOTE_IP.to_string();
         let wg_remote_name = "innisfree_remote".to_string();
-        let wg_remote_keypair = WireguardKeypair::new();
+        let wg_remote_keypair = WireguardKeypair::new()?;
         let wg_remote_host = WireguardHost {
             name: wg_remote_name.clone(),
             address: wg_remote_ip.clone(),
@@ -114,7 +117,7 @@ impl WireguardManager {
             peer: wg_local_host.clone(),
         };
 
-        WireguardManager {
+        Ok(WireguardManager {
             wg_local_ip,
             wg_local_name,
             wg_local_host,
@@ -125,33 +128,31 @@ impl WireguardManager {
 
             wg_local_device,
             wg_remote_device,
-        }
+        })
     }
 }
 
-fn generate_wireguard_privkey() -> String {
+fn generate_wireguard_privkey() -> Result<String, InnisfreeError> {
     // Call out to "wg genkey" and collect output.
     // Ideally we'd generate these values in pure Rust, but
     // calling out to wg as a first draft.
     let privkey_cmd = std::process::Command::new("wg")
         .args(&["genkey"])
-        .output()
-        .expect("Failed to generate Wireguard private key");
+        .output()?;
     let privkey: String = str::from_utf8(&privkey_cmd.stdout)
         .unwrap()
         .trim()
         .to_string();
-    privkey
+    Ok(privkey)
 }
 
-fn generate_wireguard_pubkey(privkey: &str) -> String {
+fn derive_wireguard_pubkey(privkey: &str) -> Result<String, InnisfreeError> {
     // Open a pipe to 'wg genkey', to pass in the privkey
     let pubkey_cmd = Command::new("wg")
         .args(&["pubkey"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .spawn()?;
 
     // Write wg privkey to stdin on pubkey process
     pubkey_cmd
@@ -168,7 +169,7 @@ fn generate_wireguard_pubkey(privkey: &str) -> String {
         .unwrap();
 
     pubkey = pubkey.trim().to_string();
-    pubkey
+    Ok(pubkey)
 }
 
 #[cfg(test)]
@@ -200,7 +201,7 @@ mod tests {
 
     // Helper function for reusable structs
     fn _generate_hosts() -> Vec<WireguardHost> {
-        let kp1 = WireguardKeypair::new();
+        let kp1 = WireguardKeypair::new().unwrap();
         let h1 = WireguardHost {
             name: "foo1".to_string(),
             address: "127.0.0.1".to_string(),
@@ -208,7 +209,7 @@ mod tests {
             listenport: 80,
             keypair: kp1,
         };
-        let kp2 = WireguardKeypair::new();
+        let kp2 = WireguardKeypair::new().unwrap();
         let h2 = WireguardHost {
             name: "foo2".to_string(),
             address: "127.0.0.1".to_string(),
@@ -286,14 +287,14 @@ mod tests {
         let privkey = String::from("yPgz26A4S6RcniNaikFZrc0C0SyCW1moXmDP7AMeimE=");
         let expected_pubkey = "ISRq2SHZQDnSfV0VlmMEP4MbwfExE/iNHzthMQ7eNmY=";
         debug!("Expecting pubkey: {}", expected_pubkey);
-        let pubkey = generate_wireguard_pubkey(&privkey);
+        let pubkey = derive_wireguard_pubkey(&privkey).unwrap();
         debug!("Found pubkey: {}", pubkey);
         assert_eq!(pubkey, "ISRq2SHZQDnSfV0VlmMEP4MbwfExE/iNHzthMQ7eNmY=");
     }
 
     #[test]
     fn key_generation() {
-        let kp = WireguardKeypair::new();
+        let kp = WireguardKeypair::new().unwrap();
         assert!(!kp.public.ends_with("\n"));
         assert!(!kp.private.ends_with("\n"));
         // Slashes '/' will be rendered as hex value &#x2F if formatting is broken

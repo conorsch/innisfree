@@ -105,7 +105,7 @@ mod tests {
     // This function is copied from src/wg.rs,
     // figure out a way to reuse it safely
     fn _generate_hosts() -> Vec<WireguardHost> {
-        let kp1 = WireguardKeypair::new();
+        let kp1 = WireguardKeypair::new().unwrap();
         let h1 = WireguardHost {
             name: "foo1".to_string(),
             address: "127.0.0.1".to_string(),
@@ -113,7 +113,7 @@ mod tests {
             listenport: 80,
             keypair: kp1,
         };
-        let kp2 = WireguardKeypair::new();
+        let kp2 = WireguardKeypair::new().unwrap();
         let h2 = WireguardHost {
             name: "foo2".to_string(),
             address: "127.0.0.1".to_string(),

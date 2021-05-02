@@ -1,4 +1,7 @@
+extern crate custom_error;
 extern crate home;
+use custom_error::custom_error;
+
 use serde::Serialize;
 
 // Describes a request for a port to expose.
@@ -56,6 +59,17 @@ pub fn clean_config_dir() {
         let f = f.unwrap();
         std::fs::remove_file(f.path()).unwrap();
     }
+}
+
+// Using custom_error mostly for read/write errors
+// Note the use of braces rather than parentheses.
+custom_error! {pub InnisfreeError
+    IO{source: std::io::Error} = "input/output error",
+    // CommandFailure{source: std::process::ExitStatus} = "command failed",
+    SSHCommandFailure = "SSH command failed",
+    ServerNotFound = "Server does not exist",
+    CommandFailure = "local command failed",
+    Unknown = "unknown error",
 }
 
 #[cfg(test)]

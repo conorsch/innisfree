@@ -1,4 +1,4 @@
-use clap::App;
+use clap::{crate_version, App};
 use clap::Arg;
 use std::env;
 use std::error::Error;
@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let env = Env::default().filter_or("RUST_LOG", "debug,reqwest=info");
     env_logger::init_from_env(env);
     let matches = App::new("Innisfree")
-        .version("0.1.1")
+        .version(crate_version!())
         .about("Exposes local services on a public IPv4 address, via DigitalOcean")
         .subcommand(
             App::new("up")
@@ -100,9 +100,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
         info!("Will provide proxies for {:?}", services);
 
         info!("Creating server");
-        let mgr = Arc::new(manager::InnisfreeManager::new(services));
+        let mgr = Arc::new(manager::InnisfreeManager::new(services).unwrap());
         info!("Configuring server");
-        mgr.up();
+        match mgr.up() {
+            Ok(_) => {
+                trace!("Up reports success");
+            }
+            Err(e) => {
+                error!("Failed bringing up tunnel: {}", e);
+                // Error probably unrecoverable
+                warn!("Attempting to exit gracefully...");
+                let _ = mgr.clean();
+                std::process::exit(2);
+            }
+        }
 
         let mgr_ctrlc = mgr.clone();
         ctrlc::set_handler(move || {
@@ -126,15 +137,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let local_ip = String::from(WIREGUARD_LOCAL_IP);
         manager::run_proxy(local_ip, dest_ip, mgr.services.clone()).await;
     } else if let Some(ref _matches) = matches.subcommand_matches("ssh") {
-        warn!("Subcommand 'ssh' is only partially implemented; it assumes server exists");
-        let ip = manager::get_server_ip().unwrap();
-        info!("Found server IPv4 address: {:?}", ip);
-        debug!("Attempting to open interactive shell");
-        manager::open_shell();
+        let result = manager::open_shell();
+        match result {
+            Ok(_) => trace!("Interactive SSH session completed successfully"),
+            Err(_) => {
+                error!("Server not found. Try running 'innisfree up' first");
+                std::process::exit(3);
+            }
+        }
     } else if let Some(ref _matches) = matches.subcommand_matches("ip") {
-        warn!("Subcommand 'ip' is only partially implemented; it assumes server exists");
-        let ip = manager::get_server_ip().unwrap();
-        println!("{}", ip);
+        let ip = manager::get_server_ip();
+        match ip {
+            Ok(ip) => {
+                println!("{}", ip);
+            }
+            Err(_) => {
+                error!("Server not found. Try running 'innisfree up' first.");
+                std::process::exit(2);
+            }
+        }
     } else if let Some(ref matches) = matches.subcommand_matches("proxy") {
         warn!("Subcommand 'proxy' only intended for debugging, it assumes tunnel exists already");
         let dest_ip = matches.value_of("dest-ip").unwrap().to_owned();

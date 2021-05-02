@@ -1,6 +1,6 @@
 [package]
 name = "innisfree"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Conor Schaefer <conor.schaefer@gmail.com>"]
 edition = "2018"
 description = "Exposes local services on public IPv4 address, via cloud server."
@@ -8,6 +8,7 @@ description = "Exposes local services on public IPv4 address, via cloud server."
 [dependencies]
 clap = "3.0.0-beta.2"
 ctrlc = { version = "3.0", features = ["termination"] }
+custom_error = "1.9.2"
 log = "0.4.0"
 env_logger = "0.8.3"
 home = "0.5.3"

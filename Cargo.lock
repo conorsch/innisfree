@@ -203,6 +203,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "custom_error"
+version = "1.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f8a51dd197fa6ba5b4dc98a990a43cc13693c23eb0089ebb0fcc1f04152bca6"
+
+[[package]]
 name = "deunicode"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -605,10 +611,11 @@ dependencies = [
 
 [[package]]
 name = "innisfree"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "clap",
  "ctrlc",
+ "custom_error",
  "env_logger",
  "futures",
  "home",
