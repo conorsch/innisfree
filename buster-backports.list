@@ -1,4 +1,0 @@
-# For Wireguard
-deb https://deb.debian.org/debian buster-backports main
-deb-src https://deb.debian.org/debian buster-backports main
-

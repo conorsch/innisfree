@@ -1,15 +1,11 @@
-DEFAULT_GOAL := "none"
-
-.PHONY: none
-none:
-
+DEFAULT_GOAL := "all"
 
 .PHONY: all
 all: lint test build
 
 .PHONY: run
 run: build
-	./i up
+	cargo run -- up
 
 .PHONY: build
 build: install-deps
@@ -33,12 +29,6 @@ lint:
 clean:
 	cargo clean
 	git clean -fdX
-
-.PHONY: docker
-docker:
-	#docker build . -f Dockerfile.fast -t docker.ruin.dev/innisfree
-	docker build . -f Dockerfile -t docker.ruin.dev/innisfree
-	docker push docker.ruin.dev/innisfree-rust
 
 .PHONY: deb
 deb:

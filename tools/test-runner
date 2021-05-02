@@ -6,7 +6,7 @@ set -u
 #set -o pipefail
 
 
-cargo build
+# cargo build
 
 netstat -lnp | grep -iP '808[01]' | perl -lanE 'say $F[-1]' | grep -oP '^\d+' \
     | xargs -d '\n' -r kill
@@ -18,7 +18,7 @@ echo jawn > "${dst_dir}/index.html"
 
 local_ip="$(ip route get 1.1.1.1 | perl -nE '/src ([\d\.]+)/ and say $1')"
 killall python3 || true
-./i proxy -d "$local_ip" -p 8080 &
+cargo run -- proxy -d "$local_ip" -p 8080 &
 sleep 1
 python3 -m http.server --bind "$local_ip" --directory "$dst_dir" 8080 &
 sleep 1

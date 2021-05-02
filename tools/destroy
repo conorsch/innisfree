@@ -5,5 +5,5 @@ set -o pipefail
 
 
 
-doctl compute droplet list jawn --no-header --format ID \
+doctl compute droplet list innisfree --no-header --format ID \
           | xargs -r -P5 -n1 doctl compute droplet delete -f
