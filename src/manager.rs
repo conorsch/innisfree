@@ -153,6 +153,9 @@ impl InnisfreeManager {
         self.bring_down_local_wg();
         self.server.destroy();
     }
+    pub fn assign_floating_ip(&self, floating_ip: &str) {
+        self.server.assign_floating_ip(floating_ip);
+    }
 }
 
 pub fn get_server_ip() -> Option<String> {

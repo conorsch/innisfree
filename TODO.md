@@ -35,9 +35,10 @@
 * [x] Add cleanup methods - wg
 * [x] Catch ctrl+c to cleanup
 * [x] Tune nginx config, workers auto
-* [.] Wireguard config should be a /30
-* [ ] SSH privkey should be 600
-* [ ] SSH pubkey file should contain pubkey, not privkey
+* [x] Wireguard config should be a /30
+* [x] SSH privkey should be 600
+* [x] SSH pubkey file should contain pubkey, not privkey
 * [ ] SSH commands don't seem to report failure
+* [x] Wire up floating ip
 
 * [.] Add iptables rules to wg to block all but authorized

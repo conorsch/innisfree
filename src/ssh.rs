@@ -1,6 +1,9 @@
 use std::fs::read_to_string;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::process::Command;
+
+use std::io::Write;
 
 extern crate tempfile;
 
@@ -34,9 +37,27 @@ impl SshKeypair {
             .to_str()
             .unwrap()
             .to_string();
+
+        // From the dope https://github.com/Leo1003/rust-osshkeys/blob/master/examples/generate_keyfile.rs
+        // which bizarrely I am not yet using, found it after writing the shell-outs version
+        // already
+        let mut fop = std::fs::OpenOptions::new();
+        fop.write(true).create(true).truncate(true);
+        // cfg_if! requires external crate, look into it
+        // cfg_if! {
+        //    if #[cfg(unix)] {
+        //        fop.mode(0o600);
+        //    }
+        // }
+        fop.mode(0o600);
+        let mut f = fop.open(&privkey_filepath).unwrap();
+        // std::fs::write(&privkey_filepath, &self.private).expect("Failed to write SSH privkey");
+        f.write_all(&self.private.as_bytes())
+            .expect("Failed to write SSH privkey");
+
+        // Pubkey is public, so default umask is fine, expecting 644 or so.
         let pubkey_filepath: String = privkey_filepath.clone() + ".pub";
-        std::fs::write(&privkey_filepath, &self.private).expect("Failed to write SSH privkey");
-        std::fs::write(&pubkey_filepath, &self.private).expect("Failed to write SSH privkey");
+        std::fs::write(&pubkey_filepath, &self.public).expect("Failed to write SSH pubkey");
         privkey_filepath
     }
 }

@@ -13,6 +13,7 @@ extern crate ctrlc;
 // Innisfree imports
 mod cloudinit;
 mod config;
+mod floating_ip;
 mod manager;
 mod proxy;
 mod server;
@@ -94,6 +95,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         let dest_ip = matches.value_of("dest-ip").unwrap().to_owned();
         let port_spec = matches.value_of("ports").unwrap();
+        let floating_ip = matches.value_of("floating-ip").unwrap();
         let services = config::ServicePort::from_str_multi(port_spec);
         info!("Will provide proxies for {:?}", services);
 
@@ -111,8 +113,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         })
         .expect("Error setting Ctrl-C handler");
 
-        let ip = &mgr.server.ipv4_address();
-        info!("Server ready! IPv4 address: {:?}", ip);
+        // Really need a better default case for floating-ip
+        if floating_ip != "None" {
+            debug!("Configuring floating IP...");
+            mgr.assign_floating_ip(floating_ip);
+            info!("Server ready! IPv4 address: {}", floating_ip);
+        } else {
+            let ip = &mgr.server.ipv4_address();
+            info!("Server ready! IPv4 address: {}", ip);
+        }
         debug!("Try logging in with 'innisfree ssh'");
         let local_ip = String::from(WIREGUARD_LOCAL_IP);
         manager::run_proxy(local_ip, dest_ip, mgr.services.clone()).await;

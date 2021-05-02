@@ -17,6 +17,7 @@ use serde_json::json;
 
 use crate::cloudinit::generate_user_data;
 use crate::config::{make_config_dir, ServicePort};
+use crate::floating_ip::FloatingIp;
 use crate::ssh::SshKeypair;
 use crate::wg::WireguardDevice;
 
@@ -63,6 +64,13 @@ impl InnisfreeServer {
     pub fn ipv4_address(&self) -> String {
         let droplet = &self.droplet;
         droplet.ipv4_address()
+    }
+    pub fn assign_floating_ip(&self, floating_ip: &str) {
+        let f = FloatingIp {
+            ip: floating_ip.to_owned(),
+            droplet_id: self.droplet.id,
+        };
+        f.assign();
     }
     // Dead code because it's debug-only, might want again.
     #[allow(dead_code)]
