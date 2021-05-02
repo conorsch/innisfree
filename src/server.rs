@@ -180,7 +180,7 @@ fn destroy_droplet(droplet: &Droplet) {
     let response = client.delete(request_url).bearer_auth(api_key).send();
     match response {
         Ok(_) => {
-            debug!("Droplet successfully destroyed");
+            debug!("Destroying droplet");
         }
         Err(e) => {
             error!("Failed to destroy droplet: {}", e);

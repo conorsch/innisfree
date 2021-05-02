@@ -28,7 +28,7 @@ impl InnisfreeManager {
     }
     pub fn up(&self) {
         self.wait_for_ssh();
-        debug!("Configuring remote proxy, creating tunnel...");
+        debug!("Configuring remote proxy and opening tunnel...");
         self.wait_for_cloudinit();
         // Write out cloudinit config locally, for debugging
         // self.server.write_user_data();
@@ -200,6 +200,20 @@ pub async fn run_proxy(local_ip: String, dest_ip: String, services: Vec<ServiceP
         // debug!("Try accessing: {}:{} ({})", ip, s.port, s.protocol);
         tasks.push(h);
     }
-    join_all(tasks).await;
-    warn!("Join of all service proxies returned, surprisingly");
+    // We expect the proxies to block indefinitely, except ctrl+c.
+    // If they return earlier, we'll be able to inspect the errors.
+    let proxy_tasks = join_all(tasks).await;
+    warn!("Proxy stopped unexpectedly, no longer forwarding traffic");
+    for t in proxy_tasks {
+        match t {
+            Ok(t) => {
+                // I don't expect to see this
+                debug!("Service proxy returned ok: {:?}", t);
+            }
+            Err(e) => {
+                error!("Service proxy failed: {}", e);
+            }
+        }
+    }
+    warn!("All proxies down, exiting");
 }

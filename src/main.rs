@@ -132,6 +132,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let port_spec = matches.value_of("ports").unwrap();
         let ports = config::ServicePort::from_str_multi(port_spec);
         let local_ip = String::from(WIREGUARD_LOCAL_IP);
+        info!("Starting proxy for services {:?}", ports);
         manager::run_proxy(local_ip, dest_ip, ports).await;
     }
 
