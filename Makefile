@@ -17,7 +17,9 @@ test:
 	cargo test
 
 .PHONY: install
-install: deb
+install:
+	rm -vf target/debian/innisfree*.deb
+	$(MAKE) deb
 	sudo dpkg -i target/debian/innisfree*.deb
 
 .PHONY: lint
@@ -57,5 +59,6 @@ push:
 
 .PHONY: deploy
 deploy: deb
-	rsync -a --info=progress2 -e ssh /home/user/gits/innisfree-rust/target/debian/innisfree_0.1.1_amd64.deb baldur:pkgs/
+	ssh baldur "rm -vf pkgs/innisfree*.deb"
+	rsync -a --info=progress2 -e ssh /home/user/gits/innisfree-rust/target/debian/innisfree_*_amd64.deb baldur:pkgs/
 	ssh baldur "sudo dpkg -i pkgs/innisfree*.deb"

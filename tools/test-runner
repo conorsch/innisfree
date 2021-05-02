@@ -6,6 +6,10 @@ set -u
 #set -o pipefail
 
 
+# This script is a sin because it doesn't clean up,
+# so e.g. proxy tasks will dangle.
+exit 1
+
 # cargo build
 
 netstat -lnp | grep -iP '808[01]' | perl -lanE 'say $F[-1]' | grep -oP '^\d+' \

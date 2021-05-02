@@ -33,10 +33,7 @@ pub async fn proxy_handler(listen_addr: String, dest_addr: String) -> Result<(),
         let transfer = transfer(inbound, dest_addr.clone()).map(|r| {
             if let Err(e) = r {
                 error!("Proxy logic failed: {}", e);
-                // It's bonkers to exit, but still debugging. So would like
-                // to catch this error in the wild. Likely an ugly exit, no cleanup.
-                error!("EXITING");
-                std::process::exit(2);
+                warn!("Optimistically continuing after proxy error, should recover");
             }
         });
         tokio::spawn(transfer);

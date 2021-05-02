@@ -2,9 +2,8 @@
 [Interface]
 # Interface: {{ wg.interface.name }}
 PrivateKey = {{ wg.interface.keypair.private }}
-# Hardcode /30 subnet for two hosts
-# Trying /24 in case that helps?
-Address = {{ wg.interface.address }}/24
+# Hardcode /30 subnet, for two hosts
+Address = {{ wg.interface.address }}/30
 #DNS = 1.1.1.1, 1.0.0.1
 {% if wg.interface.listenport -%}
 ListenPort = {{ wg.interface.listenport }}
