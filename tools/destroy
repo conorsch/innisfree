@@ -6,4 +6,5 @@ set -o pipefail
 
 
 doctl compute droplet list innisfree --no-header --format ID \
+          | tail -n +2 \
           | xargs -r -P5 -n1 doctl compute droplet delete -f

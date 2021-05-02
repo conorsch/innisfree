@@ -2,7 +2,7 @@ use std::io::prelude::*;
 use std::process::{Command, Stdio};
 use std::str;
 
-use crate::config::{make_config_dir, InnisfreeError};
+use crate::config::{make_config_dir, InnisfreeError, ServicePort};
 
 extern crate tera;
 
@@ -61,15 +61,29 @@ impl WireguardDevice {
         let wg_template = include_str!("../files/wg0.conf.j2");
         let mut context = tera::Context::new();
         context.insert("wireguard_device", &self);
+        // Firewall rules are mostly important from client side,
+        // so allow rules to be ignored
+        let empty_rules: Vec<ServicePort> = Vec::new();
+        context.insert("services", &empty_rules);
         // Disable autoescaping, since it breaks wg key contents
         tera::Tera::one_off(wg_template, &context, false).unwrap()
     }
 
-    pub fn write_config(&self) {
+    pub fn config_with_services(&self, services: Vec<ServicePort>) -> String {
+        let wg_template = include_str!("../files/wg0.conf.j2");
+        let mut context = tera::Context::new();
+        context.insert("wireguard_device", &self);
+        context.insert("services", &services);
+        // Disable autoescaping, since it breaks wg key contents
+        tera::Tera::one_off(wg_template, &context, false).unwrap()
+    }
+
+    pub fn write_locally(&self, services: Vec<ServicePort>) {
         let mut wg_config_path = std::path::PathBuf::from(make_config_dir());
         wg_config_path.push("innisfree.conf");
         let mut f = std::fs::File::create(&wg_config_path).unwrap();
-        f.write_all(&self.config().as_bytes()).unwrap();
+        let wg_config = &self.config_with_services(services);
+        f.write_all(wg_config.as_bytes()).unwrap();
     }
 }
 

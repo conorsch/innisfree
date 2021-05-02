@@ -1,6 +1,6 @@
 [package]
 name = "innisfree"
-version = "0.2.2"
+version = "0.2.3"
 authors = ["Conor Schaefer <conor.schaefer@gmail.com>"]
 edition = "2018"
 description = "Exposes local services on public IPv4 address, via cloud server."

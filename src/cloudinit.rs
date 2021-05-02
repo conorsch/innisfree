@@ -54,6 +54,7 @@ pub fn generate_user_data(
     );
 
     let wg = CloudConfigFile {
+        // Use the template without firewall rules
         content: wg_device.config(),
         owner: String::from("root:root"),
         permissions: String::from("0644"),

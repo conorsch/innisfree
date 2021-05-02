@@ -40,6 +40,7 @@
 * [x] SSH pubkey file should contain pubkey, not privkey
 * [x] SSH commands don't seem to report failure
 * [x] Wire up floating ip
+* [ ] Wg command should fail
 
 * [x] Support local ip service forwarding (i.e. no-proxy)
 * [.] Add iptables rules to wg to block all but authorized
