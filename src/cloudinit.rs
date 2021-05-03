@@ -3,7 +3,7 @@
 extern crate serde;
 use serde::{Deserialize, Serialize};
 
-use crate::config::ServicePort;
+use crate::config::{ServicePort, InnisfreeError};
 use crate::ssh::SshKeypair;
 use crate::wg::{WireguardDevice, WIREGUARD_LOCAL_IP};
 
@@ -39,7 +39,7 @@ pub fn generate_user_data(
     ssh_server_keypair: &SshKeypair,
     wg_device: &WireguardDevice,
     services: &[ServicePort],
-) -> String {
+) -> Result<String, InnisfreeError> {
     let user_data = include_str!("../files/cloudinit.cfg");
     let user_data = user_data.to_string();
 
@@ -62,7 +62,7 @@ pub fn generate_user_data(
     cloud_config.write_files.push(wg);
 
     let nginx = CloudConfigFile {
-        content: nginx_streams(services),
+        content: nginx_streams(services)?,
         owner: String::from("root:root"),
         permissions: String::from("0644"),
         path: String::from("/etc/nginx/conf.d/stream/innisfree.conf"),
@@ -84,16 +84,16 @@ pub fn generate_user_data(
     let mut cc: String = String::from("#cloud-config");
     cc.push('\n');
     cc.push_str(&cc_rendered);
-    cc
+    Ok(cc)
 }
 
-fn nginx_streams(services: &[ServicePort]) -> String {
+fn nginx_streams(services: &[ServicePort]) -> Result<String, InnisfreeError> {
     let nginx_config = include_str!("../files/stream.conf.j2");
     let mut context = tera::Context::new();
     context.insert("services", services);
     context.insert("dest_ip", WIREGUARD_LOCAL_IP);
     // Disable autoescaping, since it breaks wg key contents
-    tera::Tera::one_off(nginx_config, &context, false).unwrap()
+    Ok(tera::Tera::one_off(nginx_config, &context, false).unwrap())
 }
 
 #[cfg(test)]
@@ -129,8 +129,8 @@ mod tests {
 
     #[test]
     fn cloudconfig_has_header() {
-        let kp1 = SshKeypair::new("server-test1");
-        let kp2 = SshKeypair::new("server-test2");
+        let kp1 = SshKeypair::new("server-test1").unwrap();
+        let kp2 = SshKeypair::new("server-test2").unwrap();
         let wg_hosts = _generate_hosts();
         let wg_device = WireguardDevice {
             name: String::from("foo1"),
@@ -138,7 +138,7 @@ mod tests {
             peer: wg_hosts[0].clone(),
         };
         let ports = vec![];
-        let user_data = generate_user_data(&kp1, &kp2, &wg_device, &ports);
+        let user_data = generate_user_data(&kp1, &kp2, &wg_device, &ports).unwrap();
         assert!(user_data.ends_with(""));
         assert!(user_data.starts_with("#cloud-config"));
         assert!(user_data.starts_with("#cloud-config\n"));

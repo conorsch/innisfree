@@ -17,7 +17,7 @@ impl InnisfreeManager {
     pub fn new(services: Vec<ServicePort>) -> Result<InnisfreeManager, InnisfreeError> {
         clean_config_dir();
         let wg = WireguardManager::new()?;
-        let server = InnisfreeServer::new(services, wg.clone().wg_remote_device);
+        let server = InnisfreeServer::new(services, wg.clone().wg_remote_device)?;
         Ok(InnisfreeManager {
             services: server.services.to_vec(),
             dest_ip: "127.0.0.1".to_string(),
@@ -162,7 +162,7 @@ impl InnisfreeManager {
                 }
             }
             Err(e) => {
-                error!("SSH debug jawn failed: {}", e);
+                error!("SSH command failed: {}", e);
                 return Err(InnisfreeError::SSHCommandFailure);
             }
         }

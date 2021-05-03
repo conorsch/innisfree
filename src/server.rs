@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::cloudinit::generate_user_data;
-use crate::config::{make_config_dir, ServicePort};
+use crate::config::{make_config_dir, ServicePort, InnisfreeError};
 use crate::floating_ip::FloatingIp;
 use crate::ssh::SshKeypair;
 use crate::wg::WireguardDevice;
@@ -41,25 +41,25 @@ pub struct InnisfreeServer {
 }
 
 impl InnisfreeServer {
-    pub fn new(services: Vec<ServicePort>, wg_device: WireguardDevice) -> InnisfreeServer {
+    pub fn new(services: Vec<ServicePort>, wg_device: WireguardDevice) -> Result<InnisfreeServer, InnisfreeError> {
         // Initialize variables outside struct, so we'll need to pass them around
-        let ssh_client_keypair = SshKeypair::new("client");
-        let ssh_server_keypair = SshKeypair::new("server");
+        let ssh_client_keypair = SshKeypair::new("client")?;
+        let ssh_server_keypair = SshKeypair::new("server")?;
         let user_data = generate_user_data(
             &ssh_client_keypair,
             &ssh_server_keypair,
             &wg_device,
             &services,
-        );
-        let droplet = Droplet::new(&user_data);
-        InnisfreeServer {
+        )?;
+        let droplet = Droplet::new(&user_data)?;
+        Ok(InnisfreeServer {
             services,
             ssh_client_keypair,
             ssh_server_keypair,
             wg_device,
             droplet,
             name: "innisfree".to_string(),
-        }
+        })
     }
     pub fn ipv4_address(&self) -> String {
         let droplet = &self.droplet;
@@ -81,7 +81,7 @@ impl InnisfreeServer {
             &self.ssh_server_keypair,
             &self.wg_device,
             &self.services,
-        );
+        ).unwrap();
         let mut fpath = std::path::PathBuf::from(make_config_dir());
         fpath.push("cloudinit.cfg");
         std::fs::write(&fpath.to_str().unwrap(), &user_data).expect("Failed to create cloud-init");
@@ -102,7 +102,7 @@ struct Droplet {
 }
 
 impl Droplet {
-    fn new(user_data: &str) -> Droplet {
+    fn new(user_data: &str) -> Result<Droplet, InnisfreeError> {
         debug!("Creating new DigitalOcean Droplet");
         // Build JSON request body, for sending to DigitalOcean API
         let droplet_body = json!({
@@ -123,14 +123,13 @@ impl Droplet {
             .post(request_url)
             .json(&droplet_body)
             .bearer_auth(api_key)
-            .send()
-            .unwrap();
+            .send()?;
 
         let j: serde_json::Value = response.json().unwrap();
         let d: String = j["droplet"].to_string();
         let droplet: Droplet = serde_json::from_str(&d).unwrap();
         debug!("Server created, waiting for networking");
-        droplet.wait_for_boot()
+        Ok(droplet.wait_for_boot())
     }
 
     fn wait_for_boot(&self) -> Droplet {

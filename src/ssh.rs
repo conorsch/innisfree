@@ -7,7 +7,7 @@ use std::io::Write;
 
 extern crate tempfile;
 
-use crate::config::make_config_dir;
+use crate::config::{make_config_dir, InnisfreeError};
 
 #[derive(Debug)]
 pub struct SshKeypair {
@@ -17,7 +17,7 @@ pub struct SshKeypair {
 }
 
 impl SshKeypair {
-    pub fn new(prefix: &str) -> SshKeypair {
+    pub fn new(prefix: &str) -> Result<SshKeypair, InnisfreeError> {
         create_ssh_keypair(prefix)
     }
 
@@ -62,9 +62,9 @@ impl SshKeypair {
     }
 }
 
-fn create_ssh_keypair(prefix: &str) -> SshKeypair {
+fn create_ssh_keypair(prefix: &str) -> Result<SshKeypair, InnisfreeError> {
     // Really clumsy with Path & PathBuf, so converting everything to Strings for now
-    let tmpfile = tempfile::NamedTempFile::new().unwrap();
+    let tmpfile = tempfile::NamedTempFile::new()?;
     let tmpfile = tmpfile.path();
     let privkey_filepath = String::from(tmpfile.to_str().unwrap());
     let pubkey_filepath: String = privkey_filepath.clone() + ".pub";
@@ -73,10 +73,10 @@ fn create_ssh_keypair(prefix: &str) -> SshKeypair {
     // so delete the file beforehand, then it'll create happily.
     // tempfile will still be cleaned up when dropped
     if Path::new(&privkey_filepath).exists() {
-        let _ = std::fs::remove_file(&privkey_filepath);
+        std::fs::remove_file(&privkey_filepath)?;
     }
 
-    Command::new("ssh-keygen")
+    let status = Command::new("ssh-keygen")
         .args(&[
             "-t",
             "ed25519",
@@ -88,19 +88,22 @@ fn create_ssh_keypair(prefix: &str) -> SshKeypair {
             "",
             "-q",
         ])
-        .status()
-        .expect("failed to generate ssh keypair via ssh-keygen");
+        .status();
+    match status {
+        Ok(_) => {}
+        Err(_) => {
+            let msg = "Failed to generate SSH keypair".to_owned();
+            return Err(InnisfreeError::CommandFailure{ msg: msg });
+        }
+    }
 
-    let privkey = read_to_string(&privkey_filepath).expect("Failed to open ssh privkey file");
-    let pubkey = read_to_string(&pubkey_filepath)
-        .expect("Failed to open ssh pubkey file")
-        .trim()
-        .to_string();
-    SshKeypair {
+    let privkey = read_to_string(&privkey_filepath)?;
+    let pubkey = read_to_string(&pubkey_filepath)?.trim().to_string();
+    Ok(SshKeypair {
         prefix: prefix.to_string(),
         private: privkey,
         public: pubkey,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -109,7 +112,7 @@ mod tests {
 
     #[test]
     fn whitespace_is_stripped() {
-        let kp = SshKeypair::new("test1");
+        let kp = SshKeypair::new("test1").unwrap();
         assert!(kp.private != kp.public);
         // trailing whitespace can screw up the yaml
         assert!(!kp.public.ends_with("\n"));

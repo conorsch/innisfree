@@ -1,5 +1,5 @@
-use clap::{crate_version, App};
 use clap::Arg;
+use clap::{crate_version, App};
 use std::env;
 use std::error::Error;
 use std::sync::Arc;
@@ -100,7 +100,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         info!("Will provide proxies for {:?}", services);
 
         info!("Creating server");
-        let mgr = Arc::new(manager::InnisfreeManager::new(services).unwrap());
+        let mgr = match manager::InnisfreeManager::new(services) {
+            Ok(m) => m,
+            Err(e) => {
+                error!("{}", e);
+                std::process::exit(2);
+            }
+        };
+        let mgr = Arc::new(mgr);
         info!("Configuring server");
         match mgr.up() {
             Ok(_) => {

@@ -68,7 +68,8 @@ custom_error! {pub InnisfreeError
     // CommandFailure{source: std::process::ExitStatus} = "command failed",
     SSHCommandFailure = "SSH command failed",
     ServerNotFound = "Server does not exist",
-    CommandFailure = "local command failed",
+    CommandFailure{msg: String} = "Local command failed: {}",
+    NetworkError{source: reqwest::Error} = "Network error, check connection",
     Unknown = "unknown error",
 }
 

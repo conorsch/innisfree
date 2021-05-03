@@ -25,7 +25,7 @@ impl WireguardKeypair {
     pub fn new() -> Result<WireguardKeypair, InnisfreeError> {
         let privkey = match generate_wireguard_privkey() {
             Ok(p) => p,
-            Err(_) => return Err(InnisfreeError::CommandFailure),
+            Err(_) => return Err(InnisfreeError::CommandFailure{ msg: "Failed to generate wireguard keypair".to_owned()}),
         };
         let pubkey = derive_wireguard_pubkey(&privkey)?;
         Ok(WireguardKeypair {
