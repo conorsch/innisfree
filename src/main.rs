@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init_from_env(env);
     let matches = App::new("Innisfree")
         .version(crate_version!())
-        .about("Exposes local services on a public IPv4 address, via DigitalOcean")
+        .about("Exposes local services on a public IPv4 address, via a cloud server.")
         .subcommand(
             App::new("up")
                 .about("Create new innisfree tunnel")
