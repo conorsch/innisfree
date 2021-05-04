@@ -6,26 +6,24 @@ set -u
 #set -o pipefail
 
 
-# This script is a sin because it doesn't clean up,
-# so e.g. proxy tasks will dangle.
-exit 1
+# Make sure to clean up afterwards
+trap 'jobs -p | xargs -r kill' EXIT
 
 # cargo build
 
-netstat -lnp | grep -iP '808[01]' | perl -lanE 'say $F[-1]' | grep -oP '^\d+' \
+local_port="8080"
+
+# Make sure anything that wasn't cleaned up is killed
+netstat -lnp | grep -iF "$local_port" | perl -lanE 'say $F[-1]' | grep -oP '^\d+' \
     | xargs -d '\n' -r kill
 
-dst_dir="/tmp/jawn"
-mkdir -p "$dst_dir"
-echo jawn > "${dst_dir}/index.html"
+dst_dir="$(mktemp -d)"
+echo "Hello, world!" > "${dst_dir}/index.html"
 
-
-local_ip="$(ip route get 1.1.1.1 | perl -nE '/src ([\d\.]+)/ and say $1')"
-killall python3 || true
-cargo run -- proxy -d "$local_ip" -p 8080 &
+cargo build
+cargo run -- up -p "$local_port"
+python3 -m http.server --directory "$dst_dir" "$local_port" &
 sleep 1
-python3 -m http.server --bind "$local_ip" --directory "$dst_dir" 8080 &
-sleep 1
-curl "http://${local_ip}:8080" || true
-curl --connect-timeout 3 --max-time 5 "http://$(./i ip):8080" || true
+curl "http://localhost:${local_port}" || true
+curl --connect-timeout 3 --max-time 5 "http://$(cargo run -- ip):${local_port}"
 wait

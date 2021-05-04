@@ -44,7 +44,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 )
                 .arg(
                     Arg::new("dest-ip")
-                        .about("Ipv4 Address of proxy destination, whither traffic is forwarded")
+                        .about("IPv4 Address of proxy destination, whither traffic is forwarded")
                         .default_value("127.0.0.1")
                         .long("dest-ip")
                         .short('d'),
@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 )
                 .arg(
                     Arg::new("dest-ip")
-                        .about("Ipv4 Address of proxy destination, whither traffic is forwarded")
+                        .about("IPv4 Address of proxy destination, whither traffic is forwarded")
                         .default_value("127.0.0.1")
                         .long("dest-ip")
                         .short('d'),
@@ -142,7 +142,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         debug!("Try logging in with 'innisfree ssh'");
         let local_ip = String::from(WIREGUARD_LOCAL_IP);
-        manager::run_proxy(local_ip, dest_ip, mgr.services.clone()).await;
+        if dest_ip != "127.0.0.1" {
+            manager::run_proxy(local_ip, dest_ip, mgr.services.clone()).await;
+        } else {
+            info!(
+                "Ready to listen on {}. Start local services. Make sure to bind to 0.0.0.0, rather than 127.0.0.1!",
+                port_spec
+            );
+            debug!("Blocking forever. Press ctrl+c to tear down the tunnel and destroy server.");
+            // Block forever, ctrl+c will interrupt
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(10));
+            }
+        }
     } else if let Some(ref _matches) = matches.subcommand_matches("ssh") {
         let result = manager::open_shell();
         match result {

@@ -93,7 +93,7 @@ fn create_ssh_keypair(prefix: &str) -> Result<SshKeypair, InnisfreeError> {
         Ok(_) => {}
         Err(_) => {
             let msg = "Failed to generate SSH keypair".to_owned();
-            return Err(InnisfreeError::CommandFailure{ msg: msg });
+            return Err(InnisfreeError::CommandFailure { msg });
         }
     }
 

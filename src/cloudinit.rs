@@ -3,7 +3,7 @@
 extern crate serde;
 use serde::{Deserialize, Serialize};
 
-use crate::config::{ServicePort, InnisfreeError};
+use crate::config::{InnisfreeError, ServicePort};
 use crate::ssh::SshKeypair;
 use crate::wg::{WireguardDevice, WIREGUARD_LOCAL_IP};
 
@@ -93,7 +93,11 @@ fn nginx_streams(services: &[ServicePort]) -> Result<String, InnisfreeError> {
     context.insert("services", services);
     context.insert("dest_ip", WIREGUARD_LOCAL_IP);
     // Disable autoescaping, since it breaks wg key contents
-    Ok(tera::Tera::one_off(nginx_config, &context, false).unwrap())
+    let result = tera::Tera::one_off(nginx_config, &context, false);
+    match result {
+        Ok(r) => Ok(r),
+        Err(e) => Err(InnisfreeError::Template { source: e }),
+    }
 }
 
 #[cfg(test)]

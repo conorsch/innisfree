@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::cloudinit::generate_user_data;
-use crate::config::{make_config_dir, ServicePort, InnisfreeError};
+use crate::config::{make_config_dir, InnisfreeError, ServicePort};
 use crate::floating_ip::FloatingIp;
 use crate::ssh::SshKeypair;
 use crate::wg::WireguardDevice;
@@ -41,7 +41,10 @@ pub struct InnisfreeServer {
 }
 
 impl InnisfreeServer {
-    pub fn new(services: Vec<ServicePort>, wg_device: WireguardDevice) -> Result<InnisfreeServer, InnisfreeError> {
+    pub fn new(
+        services: Vec<ServicePort>,
+        wg_device: WireguardDevice,
+    ) -> Result<InnisfreeServer, InnisfreeError> {
         // Initialize variables outside struct, so we'll need to pass them around
         let ssh_client_keypair = SshKeypair::new("client")?;
         let ssh_server_keypair = SshKeypair::new("server")?;
@@ -81,7 +84,8 @@ impl InnisfreeServer {
             &self.ssh_server_keypair,
             &self.wg_device,
             &self.services,
-        ).unwrap();
+        )
+        .unwrap();
         let mut fpath = std::path::PathBuf::from(make_config_dir());
         fpath.push("cloudinit.cfg");
         std::fs::write(&fpath.to_str().unwrap(), &user_data).expect("Failed to create cloud-init");

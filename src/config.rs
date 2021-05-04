@@ -64,12 +64,13 @@ pub fn clean_config_dir() {
 // Using custom_error mostly for read/write errors
 // Note the use of braces rather than parentheses.
 custom_error! {pub InnisfreeError
-    IO{source: std::io::Error} = "input/output error",
+    Io{source: std::io::Error} = "input/output error",
     // CommandFailure{source: std::process::ExitStatus} = "command failed",
-    SSHCommandFailure = "SSH command failed",
+    SshCommandFailure = "SSH command failed",
     ServerNotFound = "Server does not exist",
     CommandFailure{msg: String} = "Local command failed: {}",
     NetworkError{source: reqwest::Error} = "Network error, check connection",
+    Template{source: tera::Error} = "Template generation failed",
     Unknown = "unknown error",
 }
 

@@ -38,11 +38,12 @@
 * [x] Wireguard config should be a /30
 * [x] SSH privkey should be 600
 * [x] SSH pubkey file should contain pubkey, not privkey
-* [ ] SSH commands don't seem to report failure
+* [x] SSH commands don't seem to report failure
 * [x] Wire up floating ip
 
+* [x] Support local ip service forwarding (i.e. no-proxy)
 * [.] Add iptables rules to wg to block all but authorized
 * [x] Make ip command fail if server doesnt exit
 * [x] Make ssh command fail if server doesnt exit
-* [.] Add lots of results for better error handling
+* [x] Add lots of results for better error handling
 * [ ] Add doctor subcommand for checking

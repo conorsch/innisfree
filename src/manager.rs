@@ -80,7 +80,7 @@ impl InnisfreeManager {
             }
             Err(e) => {
                 error!("Failed to ping remote Wireguard interface, tunnel broken");
-                Err(InnisfreeError::IO { source: e })
+                Err(InnisfreeError::Io { source: e })
             }
         }
     }
@@ -155,15 +155,15 @@ impl InnisfreeManager {
                 trace!("SSH command ran, checking status code of returned process");
                 if s.success() {
                     trace!("Yes, process was truly successful");
-                    return Ok(());
+                    Ok(())
                 } else {
                     error!("SSH command failed: {}", s);
-                    return Err(InnisfreeError::SSHCommandFailure);
+                    Err(InnisfreeError::SshCommandFailure)
                 }
             }
             Err(e) => {
                 error!("SSH command failed: {}", e);
-                return Err(InnisfreeError::SSHCommandFailure);
+                Err(InnisfreeError::SshCommandFailure)
             }
         }
     }
