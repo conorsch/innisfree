@@ -1,9 +1,12 @@
 [package]
 name = "innisfree"
 version = "0.2.3"
-authors = ["Conor Schaefer <conor.schaefer@gmail.com>"]
+authors = ["Conor Schaefer <conor@freedom.press>"]
 edition = "2018"
 description = "Exposes local services on public IPv4 address, via cloud server."
+license = "AGPLv3"
+readme = "README.md"
+publish = false
 
 [dependencies]
 clap = "3.0.0-beta.2"
