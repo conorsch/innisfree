@@ -1,6 +1,0 @@
-#!/usr/bin/make -f
-
-export SOURCE_DATE_EPOCH ?= $(shell dpkg-parsechangelog -STimestamp)
-
-%:
-	echo "Now building"

@@ -10,7 +10,6 @@ run: build
 .PHONY: build
 build: install-deps
 	cargo build
-	sudo setcap CAP_NET_BIND_SERVICE=+ep ./target/debug/innisfree
 
 .PHONY: test
 test:
@@ -38,8 +37,8 @@ deb:
 
 .PHONY: install-deps
 install-deps:
-	sudo apt install -y libssl-dev libcap2-bin reprotest
-	# cargo install cargo-deb
+	sudo apt install -y libssl-dev libcap2-bin reprotest lld
+	cargo deb --version || cargo install cargo-deb
 
 .PHONY: ci
 ci: install-deps lint test
@@ -49,16 +48,18 @@ ci: install-deps lint test
 	cargo build --release
 	$(MAKE) deb
 
+
 .PHONY: reprotest
 reprotest: install-deps
-	reprotest -c "make build" . "target/debug/innisfree"
+	reprotest \
+		--variations "-kernel, -user_group, -domain_host, -home" \
+		--min-cpus=99999 --auto-build -c ". $$HOME/.cargo/env && . ./.env && unset LD_PRELOAD && rustup default stable && cargo build --release" . "target/release/innisfree"
 
-.PHONY: push
-push:
-	rsync -a --info=progress2 --exclude "target/*" --delete-after /home/user/gits/innisfree-rust/ tau:/home/conor/innisfree-rust/
-
-.PHONY: deploy
-deploy: deb
-	ssh baldur "rm -vf pkgs/innisfree*.deb"
-	rsync -a --info=progress2 -e ssh /home/user/gits/innisfree-rust/target/debian/innisfree_*_amd64.deb baldur:pkgs/
-	ssh baldur "sudo dpkg -i pkgs/innisfree*.deb"
+.PHONY: reprotest-deb
+# export SOURCE_DATE_EPOCH="$(dpkg-parsechangelog -STimestamp)"
+reprotest-deb:
+	echo "doesn't work yet, since cargo-deb has no support for 'SOURCE_DATE_EPOCH'"
+	echo "two variations are prominent: timestamp metadata, and ordering of the 'Depends' field values."
+	reprotest \
+		--variations "-kernel, -user_group, -domain_host, -home" \
+		--min-cpus=99999 --auto-build -c ". $HOME/.cargo/env && unset LD_PRELOAD && rustup default stable && make deb" . "target/debian/*.deb"

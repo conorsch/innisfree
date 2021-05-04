@@ -13,17 +13,9 @@ debian/*.substvars
 debian/*/
 debian/files
 
-
 # Fixtures for debugging
 files/droplet.json
 
 # Added by cargo
 
 /target
-
-
-# Added by cargo
-#
-# already existing elements were commented out
-
-#/target

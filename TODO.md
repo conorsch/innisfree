@@ -43,8 +43,14 @@
 * [ ] Wg command should fail
 
 * [x] Support local ip service forwarding (i.e. no-proxy)
-* [.] Add iptables rules to wg to block all but authorized
+* [x] Add iptables rules to wg to block all but authorized
 * [x] Make ip command fail if server doesnt exit
 * [x] Make ssh command fail if server doesnt exit
 * [x] Add lots of results for better error handling
 * [ ] Add doctor subcommand for checking
+
+* [x] Make 'release' builds reproducible
+* [ ] Make deb package builds reproducible
+* [x] Use a build.rs file for setting remap on rustcflags https://doc.rust-lang.org/cargo/reference/build-scripts.html
+      Turns out maybe this isn't possible: RUSTFLAGS must be set above the cargo context in which build.rs runs.
+      So, settling on a .env file for now to set RUSTFLAGS for reproducible builds.
