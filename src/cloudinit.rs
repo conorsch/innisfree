@@ -70,14 +70,8 @@ pub fn generate_user_data(
     };
     cloud_config.write_files.push(nginx);
 
-    // For debugging, add another pubkey
-    // $ doctl compute ssh-key list -o json | jq -r .[].public_key
-    // ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIlLuXP4H+Jrj7wiuaP18nam634kKSNVHJ0SisdFxv3v
-    let tmp_pubkey =
-        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIlLuXP4H+Jrj7wiuaP18nam634kKSNVHJ0SisdFxv3v"
-            .to_owned();
     cloud_config.users[0].ssh_authorized_keys =
-        vec![ssh_client_keypair.public.to_string(), tmp_pubkey];
+        vec![ssh_client_keypair.public.to_string()];
 
     let cc_rendered: String = serde_yaml::to_string(&cloud_config).unwrap();
     let cc_rendered_no_header = &cc_rendered.as_bytes()[4..];
