@@ -47,6 +47,16 @@ You can install directly from source:
 make install
 ```
 
+Requirements
+------------
+
+1. Linux-only. Even if the binary compiles under macOS, userspace
+   implementations of Wireguard are still up-and-coming.
+2. [Wireguard]. For most modern Linux distros, this is available
+   out of the box. Notably, Debian Stable Buster 10 lacks it,
+   but it's available in the buster-backports repo.
+3. A [DigitalOcean] cloud account, to create a server.
+
 Usage
 -----
 
