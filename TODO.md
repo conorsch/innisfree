@@ -30,6 +30,7 @@
 
 * [x] SSH should use tmpfiles, not clobber primary dir
 * [ ] Package upgrade should be async
+* [ ] Configure unattended-upgrades
 * [x] Add cleanup methods - dir
 * [x] Add cleanup methods - droplet
 * [x] Add cleanup methods - wg
@@ -40,14 +41,14 @@
 * [x] SSH pubkey file should contain pubkey, not privkey
 * [x] SSH commands don't seem to report failure
 * [x] Wire up floating ip
-* [ ] Wg command should fail
+* [x] Wg command should fail
 
 * [x] Support local ip service forwarding (i.e. no-proxy)
 * [x] Add iptables rules to wg to block all but authorized
 * [x] Make ip command fail if server doesnt exit
 * [x] Make ssh command fail if server doesnt exit
 * [x] Add lots of results for better error handling
-* [ ] Add doctor subcommand for checking
+* [x] Add doctor subcommand for checking
 
 * [x] Make 'release' builds reproducible
 * [ ] Make deb package builds reproducible

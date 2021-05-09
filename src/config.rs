@@ -70,6 +70,7 @@ custom_error! {pub InnisfreeError
     ServerNotFound = "Server does not exist",
     CommandFailure{msg: String} = "Local command failed: {}",
     NetworkError{source: reqwest::Error} = "Network error, check connection",
+    PlatformError = "Platform error, only Linux is supported",
     Template{source: tera::Error} = "Template generation failed",
     Unknown = "unknown error",
 }

@@ -54,7 +54,8 @@ Requirements
    implementations of Wireguard are still up-and-coming.
 2. [Wireguard]. For most modern Linux distros, this is available
    out of the box. Notably, Debian Stable Buster 10 lacks it,
-   but it's available in the buster-backports repo.
+   but it's available in the buster-backports repo. Run
+   `innisfree doctor` to check support your machine.
 3. A [DigitalOcean] cloud account, to create a server.
 
 Usage
@@ -69,11 +70,12 @@ FLAGS:
     -V, --version    Prints version information
 
 SUBCOMMANDS:
-    help     Prints this message or the help of the given subcommand(s)
-    ip       Display IPv4 address for cloud node
-    proxy    Start process to forward traffic, assumes tunnel already up
-    ssh      Open interactive SSH shell on cloud node
-    up       Create new innisfree tunnel
+    doctor    Run checks to evaluate platform support
+    help      Prints this message or the help of the given subcommand(s)
+    ip        Display IPv4 address for cloud node
+    proxy     Start process to forward traffic, assumes tunnel already up
+    ssh       Open interactive SSH shell on cloud node
+    up        Create new innisfree tunnel
 ```
 
 What's with the name?

@@ -13,6 +13,7 @@ extern crate ctrlc;
 // Innisfree imports
 mod cloudinit;
 mod config;
+mod doctor;
 mod floating_ip;
 mod manager;
 mod proxy;
@@ -60,6 +61,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .subcommand(App::new("ssh").about("Open interactive SSH shell on cloud node"))
         .subcommand(App::new("ip").about("Display IPv4 address for cloud node"))
+        .subcommand(App::new("doctor").about("Run checks to evaluate platform support"))
         .subcommand(
             App::new("proxy")
                 .about("Start process to forward traffic, assumes tunnel already up")
@@ -183,6 +185,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let local_ip = String::from(WIREGUARD_LOCAL_IP);
         info!("Starting proxy for services {:?}", ports);
         manager::run_proxy(local_ip, dest_ip, ports).await;
+    } else if let Some(ref _matches) = matches.subcommand_matches("doctor") {
+        info!("Running doctor, to determine platform support...");
+        match doctor::platform_is_supported() {
+            Ok(result) => {
+                if result {
+                    info!("Platform support looks good! Ready to rock.");
+                } else {
+                    error!("Found some problems. Resolve those, then rerun doctor.");
+                }
+            }
+            Err(_) => {
+                error!(
+                    "Platform is not supported. =( \
+                       Only recent Linux distros such as Debian, Ubuntu, or Fedora are supported."
+                );
+                std::process::exit(4);
+            }
+        }
     }
 
     Ok(())

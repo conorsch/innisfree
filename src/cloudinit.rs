@@ -70,8 +70,7 @@ pub fn generate_user_data(
     };
     cloud_config.write_files.push(nginx);
 
-    cloud_config.users[0].ssh_authorized_keys =
-        vec![ssh_client_keypair.public.to_string()];
+    cloud_config.users[0].ssh_authorized_keys = vec![ssh_client_keypair.public.to_string()];
 
     let cc_rendered: String = serde_yaml::to_string(&cloud_config).unwrap();
     let cc_rendered_no_header = &cc_rendered.as_bytes()[4..];

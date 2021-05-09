@@ -139,12 +139,11 @@ impl WireguardManager {
             wg_local_ip,
             wg_local_name,
             wg_local_host,
+            wg_local_device,
 
             wg_remote_ip,
             wg_remote_name,
             wg_remote_host,
-
-            wg_local_device,
             wg_remote_device,
         })
     }
