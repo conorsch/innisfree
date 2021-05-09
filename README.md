@@ -76,6 +76,20 @@ SUBCOMMANDS:
     up       Create new innisfree tunnel
 ```
 
+What's with the name?
+---------------------
+
+It's from the [Yeats poem](https://poets.org/poem/lake-isle-innisfree):
+
+> I will arise and go now, and go to Innisfree,<br>
+> And a small cabin build there, of clay and wattles made:<br>
+> Nine bean-rows will I have there, a hive for the honey-bee;<br>
+> And live alone in the bee-loud glade.<br>
+
+The idea is that in context of the internet, my own home is already the "bee-loud glade":
+I don't need to upload all my data into the hustle and bustle of cloud computing.
+Just give me an IP, so I can share data with others, and that's enough.
+
 
 License
 ----
