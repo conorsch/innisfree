@@ -32,8 +32,7 @@ pub async fn proxy_handler(listen_addr: String, dest_addr: String) -> Result<(),
     while let Ok((inbound, _)) = listener.accept().await {
         let transfer = transfer(inbound, dest_addr.clone()).map(|r| {
             if let Err(e) = r {
-                error!("Proxy logic failed: {}", e);
-                warn!("Optimistically continuing after proxy error, should recover");
+                warn!("Proxy connection dropped, creating new handler: {}", e);
             }
         });
         tokio::spawn(transfer);
