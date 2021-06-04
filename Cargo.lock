@@ -611,7 +611,7 @@ dependencies = [
 
 [[package]]
 name = "innisfree"
-version = "0.2.5"
+version = "0.2.6-alpha.0"
 dependencies = [
  "clap",
  "ctrlc",
