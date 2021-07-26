@@ -35,3 +35,10 @@ maintainer-scripts = "debian/"
 # depends = "libssl1.1 (>= 1.1.1d), libc6 (>= 2.28), libcap2-bin"
 depends = "$auto"
 # depends = "libcap2-bin"
+assets = [
+  ["target/release/innisfree", "usr/bin/", "755"],
+  ["innisfree@.service", "usr/lib/systemd/system/", "644"],
+]
+name = "innisfree"
+priority = "optional"
+section = "net"

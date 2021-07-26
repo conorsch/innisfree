@@ -37,9 +37,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
             App::new("up")
                 .about("Create new innisfree tunnel")
                 .arg(
+                    Arg::new("name")
+                        .about("title for the service, used for cloud node and systemd service")
+                        .default_value("innisfree")
+                        .env("INNISFREE_NAME")
+                        .long("name")
+                        .short('n'),
+                )
+                .arg(
                     Arg::new("ports")
                         .about("list of service ports to forward, comma-separated")
                         .default_value("8080/TCP,443/TCP")
+                        .env("INNISFREE_PORTS")
                         .long("ports")
                         .short('p'),
                 )
@@ -47,6 +56,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Arg::new("dest-ip")
                         .about("IPv4 Address of proxy destination, whither traffic is forwarded")
                         .default_value("127.0.0.1")
+                        .env("INNISFREE_DEST_IP")
                         .long("dest-ip")
                         .short('d'),
                 )
@@ -55,6 +65,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         .about("Declare pre-existing Floating IP to attach to Droplet")
                         // Figure out how to default to an empty string
                         .default_value("None")
+                        .env("INNISFREE_FLOATING_IP")
                         .long("floating-ip")
                         .short('f'),
                 ),
@@ -69,6 +80,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Arg::new("ports")
                         .about("list of service ports to forward, comma-separated")
                         .default_value("8080/TCP,443/TCP")
+                        .env("INNISFREE_PORTS")
                         .long("ports")
                         .short('p'),
                 )
@@ -76,6 +88,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Arg::new("dest-ip")
                         .about("IPv4 Address of proxy destination, whither traffic is forwarded")
                         .default_value("127.0.0.1")
+                        .env("INNISFREE_DEST_IP")
                         .long("dest-ip")
                         .short('d'),
                 ),
@@ -98,11 +111,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let dest_ip = matches.value_of("dest-ip").unwrap().to_owned();
         let port_spec = matches.value_of("ports").unwrap();
         let floating_ip = matches.value_of("floating-ip").unwrap();
+        let tunnel_name = config::clean_name(matches.value_of("name").unwrap());
         let services = config::ServicePort::from_str_multi(port_spec);
         info!("Will provide proxies for {:?}", services);
 
-        info!("Creating server");
-        let mgr = match manager::InnisfreeManager::new(services) {
+        info!("Creating server '{}'", &tunnel_name);
+        let mgr = match manager::InnisfreeManager::new(&tunnel_name, services) {
             Ok(m) => m,
             Err(e) => {
                 error!("{}", e);
@@ -126,7 +140,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         let mgr_ctrlc = mgr.clone();
         ctrlc::set_handler(move || {
-            warn!("Caught ctrl+c, exiting gracefully");
+            warn!("Received stop signal, exiting gracefully");
             mgr_ctrlc.clean();
             debug!("Clean up complete, exiting!");
             std::process::exit(0);

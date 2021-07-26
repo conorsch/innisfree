@@ -24,7 +24,6 @@ use crate::wg::WireguardDevice;
 const DO_REGION: &str = "sfo2";
 const DO_SIZE: &str = "s-1vcpu-1gb";
 const DO_IMAGE: &str = "ubuntu-20-04-x64";
-const DO_NAME: &str = "innisfree";
 const DO_API_BASE_URL: &str = "https://api.digitalocean.com/v2/droplets";
 
 // Manager class, wraps a cloudserver VM type, such as Droplet,
@@ -42,6 +41,7 @@ pub struct InnisfreeServer {
 
 impl InnisfreeServer {
     pub fn new(
+        name: &str,
         services: Vec<ServicePort>,
         wg_device: WireguardDevice,
     ) -> Result<InnisfreeServer, InnisfreeError> {
@@ -54,14 +54,14 @@ impl InnisfreeServer {
             &wg_device,
             &services,
         )?;
-        let droplet = Droplet::new(&user_data)?;
+        let droplet = Droplet::new(&name, &user_data)?;
         Ok(InnisfreeServer {
             services,
             ssh_client_keypair,
             ssh_server_keypair,
             wg_device,
             droplet,
-            name: "innisfree".to_string(),
+            name: name.to_string(),
         })
     }
     pub fn ipv4_address(&self) -> String {
@@ -106,12 +106,12 @@ struct Droplet {
 }
 
 impl Droplet {
-    fn new(user_data: &str) -> Result<Droplet, InnisfreeError> {
+    fn new(name: &str, user_data: &str) -> Result<Droplet, InnisfreeError> {
         debug!("Creating new DigitalOcean Droplet");
         // Build JSON request body, for sending to DigitalOcean API
         let droplet_body = json!({
             "image": DO_IMAGE,
-            "name": DO_NAME,
+            "name": name,
             "region": DO_REGION,
             "size": DO_SIZE,
             "user_data": user_data,

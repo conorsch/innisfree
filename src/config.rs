@@ -61,6 +61,17 @@ pub fn clean_config_dir() {
     }
 }
 
+/// Provides a human-readable name for the service.
+/// Adds a prefix "innisfree-" if it does not exist.
+pub fn clean_name(name: &str) -> String {
+    let mut orig = String::from(name);
+    orig = orig.replace("-innisfree", "");
+    orig = orig.replace("innisfree-", "");
+    let mut result = String::from("innisfree-");
+    result.push_str(&orig);
+    result
+}
+
 // Using custom_error mostly for read/write errors
 // Note the use of braces rather than parentheses.
 custom_error! {pub InnisfreeError
@@ -101,5 +112,15 @@ mod tests {
         let s2 = &services[1];
         assert!(s2.port == 443);
         assert!(s2.protocol == "TCP");
+    }
+    #[test]
+    fn clean_service_name() {
+        let s_simple = "foo";
+        let r_simple = clean_name(s_simple);
+        assert!(r_simple == "innisfree-foo".to_string());
+
+        let s_complex = "foo-innisfree";
+        let r_complex = clean_name(s_complex);
+        assert!(r_complex == "innisfree-foo".to_string());
     }
 }

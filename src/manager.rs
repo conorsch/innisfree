@@ -10,15 +10,20 @@ pub struct InnisfreeManager {
     dest_ip: String,
     floating_ip: Option<String>,
     pub server: InnisfreeServer,
+    pub name: String,
     wg: WireguardManager,
 }
 
 impl InnisfreeManager {
-    pub fn new(services: Vec<ServicePort>) -> Result<InnisfreeManager, InnisfreeError> {
+    pub fn new(
+        tunnel_name: &str,
+        services: Vec<ServicePort>,
+    ) -> Result<InnisfreeManager, InnisfreeError> {
         clean_config_dir();
         let wg = WireguardManager::new()?;
-        let server = InnisfreeServer::new(services, wg.clone().wg_remote_device)?;
+        let server = InnisfreeServer::new(&tunnel_name, services, wg.clone().wg_remote_device)?;
         Ok(InnisfreeManager {
+            name: tunnel_name.to_string(),
             services: server.services.to_vec(),
             dest_ip: "127.0.0.1".to_string(),
             floating_ip: Some("".to_string()),
