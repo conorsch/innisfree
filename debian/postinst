@@ -3,3 +3,6 @@
 # CAP_NET_BIND_SERVICE: Permit binding to ports below 1024 (e.g. 80 & 443)
 # CAP_NET_ADMIN: Permit iptables editing, to restrict ingress on wg interface
 setcap CAP_NET_BIND_SERVICE,CAP_NET_ADMIN=+ep /usr/bin/innisfree
+
+# Reload systemd to ensure latest service file is active
+systemctl daemon-reload
