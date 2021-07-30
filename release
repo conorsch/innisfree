@@ -2,4 +2,4 @@
 set -euo pipefail
 
 
-cargo release --sign --skip-publish --skip-push $@
+cargo release --sign $@

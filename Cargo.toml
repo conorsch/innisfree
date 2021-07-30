@@ -1,12 +1,15 @@
 [package]
 name = "innisfree"
 version = "0.2.7-alpha.0"
-authors = ["Conor Schaefer <conor@freedom.press>"]
+authors = ["Conor Schaefer <conor@ruin.dev>"]
 edition = "2018"
 description = "Exposes local services on public IPv4 address, via cloud server."
-license = "AGPLv3"
+license = "AGPL-3.0-only"
 readme = "README.md"
-publish = false
+publish = true
+repository = "https://github.com/conorsch/innisfree"
+categories = ["command-line-utilities", "network-programming"]
+keywords = ["self-hosting", "wireguard"]
 
 [dependencies]
 clap = "3.0.0-beta.2"
@@ -35,6 +38,7 @@ maintainer-scripts = "debian/"
 # depends = "libssl1.1 (>= 1.1.1d), libc6 (>= 2.28), libcap2-bin"
 depends = "$auto"
 # depends = "libcap2-bin"
+extended-description = "Creates a remote host in the cloud, then establishes a Wireguard tunnel to it. Only supports proxying TCP traffic, for now."
 assets = [
   ["target/release/innisfree", "usr/bin/", "755"],
   ["innisfree@.service", "usr/lib/systemd/system/", "644"],
