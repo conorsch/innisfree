@@ -14,22 +14,19 @@ keywords = ["self-hosting", "wireguard"]
 [dependencies]
 clap = "3.0.0-beta.2"
 ctrlc = { version = "3.0", features = ["termination"] }
-custom_error = "1.9.2"
-log = "0.4.0"
-env_logger = "0.8.3"
-home = "0.5.3"
+custom_error = "~1.9"
+env_logger = "~0.9"
+futures = "0.3"
+home = "~0.5"
+log = "~0.4"
+rand = "~0.8"
 reqwest = { version = "0.11", features = ["blocking", "json", "rustls"] }
-serde = { version = "1.0.89", features = ["derive"] }
-serde_derive = "1.0.89"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.39"
 serde_yaml = "0.8.17"
 tempfile = "3"
 tera = "1"
-
-futures = "0.3.6"
-rand = "0.7.3"
-tokio = { version = "0.3.1", features = [ "io-util", "net", "rt-multi-thread", "macros" ] }
-
+tokio = { version = "~1.8", features = [ "io-util", "net", "rt-multi-thread", "macros" ] }
 
 [package.metadata.deb]
 maintainer-scripts = "debian/"
