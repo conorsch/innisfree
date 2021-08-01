@@ -8,8 +8,6 @@ use std::sync::Arc;
 extern crate log;
 use env_logger::Env;
 
-extern crate ctrlc;
-
 // Innisfree imports
 mod cloudinit;
 mod config;
@@ -116,7 +114,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         info!("Will provide proxies for {:?}", services);
 
         info!("Creating server '{}'", &tunnel_name);
-        let mgr = match manager::InnisfreeManager::new(&tunnel_name, services) {
+        let mgr = match manager::InnisfreeManager::new(&tunnel_name, services).await {
             Ok(m) => m,
             Err(e) => {
                 error!("{}", e);
@@ -133,24 +131,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 error!("Failed bringing up tunnel: {}", e);
                 // Error probably unrecoverable
                 warn!("Attempting to exit gracefully...");
-                let _ = mgr.clean();
+                mgr.clean().await;
                 std::process::exit(2);
             }
         }
 
-        let mgr_ctrlc = mgr.clone();
-        ctrlc::set_handler(move || {
-            warn!("Received stop signal, exiting gracefully");
-            mgr_ctrlc.clean();
-            debug!("Clean up complete, exiting!");
-            std::process::exit(0);
-        })
-        .expect("Error setting Ctrl-C handler");
-
         // Really need a better default case for floating-ip
         if floating_ip != "None" {
             debug!("Configuring floating IP...");
-            mgr.assign_floating_ip(floating_ip);
+            mgr.assign_floating_ip(floating_ip).await;
             info!("Server ready! IPv4 address: {}", floating_ip);
         } else {
             let ip = &mgr.server.ipv4_address();
@@ -159,7 +148,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         debug!("Try logging in with 'innisfree ssh'");
         let local_ip = String::from(WIREGUARD_LOCAL_IP);
         if dest_ip != "127.0.0.1" {
-            manager::run_proxy(local_ip, dest_ip, mgr.services.clone()).await;
+            tokio::spawn(manager::run_proxy(local_ip, dest_ip, mgr.services.clone()));
+            mgr.block().await;
         } else {
             info!(
                 "Ready to listen on {}. Start local services. Make sure to bind to 0.0.0.0, rather than 127.0.0.1!",
@@ -167,9 +157,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             );
             debug!("Blocking forever. Press ctrl+c to tear down the tunnel and destroy server.");
             // Block forever, ctrl+c will interrupt
-            loop {
-                std::thread::sleep(std::time::Duration::from_secs(10));
-            }
+            mgr.block().await;
         }
     } else if let Some(ref _matches) = matches.subcommand_matches("ssh") {
         let result = manager::open_shell();
@@ -197,8 +185,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let port_spec = matches.value_of("ports").unwrap();
         let ports = config::ServicePort::from_str_multi(port_spec);
         let local_ip = String::from(WIREGUARD_LOCAL_IP);
+        warn!("Ctrl+c will not halt proxy, use ctrl+z and `kill -9 %1`");
         info!("Starting proxy for services {:?}", ports);
-        manager::run_proxy(local_ip, dest_ip, ports).await;
+        match manager::run_proxy(local_ip, dest_ip, ports).await {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Proxy failed: {}", e);
+                std::process::exit(4);
+            }
+        };
     } else if let Some(ref _matches) = matches.subcommand_matches("doctor") {
         info!("Running doctor, to determine platform support...");
         match doctor::platform_is_supported() {
@@ -214,7 +209,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     "Platform is not supported. =( \
                        Only recent Linux distros such as Debian, Ubuntu, or Fedora are supported."
                 );
-                std::process::exit(4);
+                std::process::exit(5);
             }
         }
     }

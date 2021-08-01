@@ -40,7 +40,7 @@ pub struct InnisfreeServer {
 }
 
 impl InnisfreeServer {
-    pub fn new(
+    pub async fn new(
         name: &str,
         services: Vec<ServicePort>,
         wg_device: WireguardDevice,
@@ -54,7 +54,7 @@ impl InnisfreeServer {
             &wg_device,
             &services,
         )?;
-        let droplet = Droplet::new(&name, &user_data)?;
+        let droplet = Droplet::new(&name, &user_data).await?;
         Ok(InnisfreeServer {
             services,
             ssh_client_keypair,
@@ -68,12 +68,12 @@ impl InnisfreeServer {
         let droplet = &self.droplet;
         droplet.ipv4_address()
     }
-    pub fn assign_floating_ip(&self, floating_ip: &str) {
+    pub async fn assign_floating_ip(&self, floating_ip: &str) {
         let f = FloatingIp {
             ip: floating_ip.to_owned(),
             droplet_id: self.droplet.id,
         };
-        f.assign();
+        f.assign().await;
     }
     // Dead code because it's debug-only, might want again.
     #[allow(dead_code)]
@@ -90,9 +90,9 @@ impl InnisfreeServer {
         fpath.push("cloudinit.cfg");
         std::fs::write(&fpath.to_str().unwrap(), &user_data).expect("Failed to create cloud-init");
     }
-    pub fn destroy(&self) {
+    pub async fn destroy(&self) -> Result<(), InnisfreeError> {
         // Destroys backing droplet
-        self.droplet.destroy();
+        Ok(self.droplet.destroy().await?)
     }
 }
 
@@ -106,7 +106,7 @@ struct Droplet {
 }
 
 impl Droplet {
-    fn new(name: &str, user_data: &str) -> Result<Droplet, InnisfreeError> {
+    async fn new(name: &str, user_data: &str) -> Result<Droplet, InnisfreeError> {
         debug!("Creating new DigitalOcean Droplet");
         // Build JSON request body, for sending to DigitalOcean API
         let droplet_body = json!({
@@ -121,33 +121,41 @@ impl Droplet {
         // Right now we only create Droplet resources, but an API Firewall would be nice.
         let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
         let request_url = DO_API_BASE_URL;
-        let client = reqwest::blocking::Client::new();
+        let client = reqwest::Client::new();
 
         let response = client
             .post(request_url)
             .json(&droplet_body)
             .bearer_auth(api_key)
-            .send()?;
+            .send()
+            .await?;
 
-        let j: serde_json::Value = response.json().unwrap();
+        let j: serde_json::Value = response.json().await?;
         let d: String = j["droplet"].to_string();
         let droplet: Droplet = serde_json::from_str(&d).unwrap();
         debug!("Server created, waiting for networking");
-        Ok(droplet.wait_for_boot())
+        Ok(droplet.wait_for_boot().await?)
     }
 
-    fn wait_for_boot(&self) -> Droplet {
+    async fn wait_for_boot(&self) -> Result<Droplet, InnisfreeError> {
         // The JSON response for droplet creation won't include info like
         // public IPv4 address, because that hasn't been assigned yet. The 'status'
         // field will show as "new", so wait until it's "active", then network info
         // will be populated. Might be a good use of enums here.
         loop {
             thread::sleep(time::Duration::from_secs(10));
-            let droplet: Droplet = get_droplet(&self);
-            if droplet.status == "active" {
-                return droplet;
-            } else {
-                info!("Server still booting, waiting...");
+            match get_droplet(&self).await {
+                Ok(droplet) => {
+                    if droplet.status == "active" {
+                        return Ok(droplet);
+                    } else {
+                        info!("Server still booting, waiting...");
+                        continue;
+                    }
+                }
+                Err(_e) => {
+                    return Err(InnisfreeError::Unknown);
+                }
             }
         }
     }
@@ -163,38 +171,40 @@ impl Droplet {
         }
         ip
     }
-    pub fn destroy(&self) {
-        destroy_droplet(&self);
+    pub async fn destroy(&self) -> Result<(), InnisfreeError> {
+        Ok(destroy_droplet(&self).await?)
     }
 }
 
 // Polls a droplet resource to get the latest data. Used during wait for boot,
 // to capture networking info like PublicIPv4, which is assigned after creation.
-fn get_droplet(droplet: &Droplet) -> Droplet {
+async fn get_droplet(droplet: &Droplet) -> Result<Droplet, InnisfreeError> {
     let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
     let request_url = DO_API_BASE_URL.to_owned() + "/" + &droplet.id.to_string();
 
-    let client = reqwest::blocking::Client::new();
-    let response = client.get(request_url).bearer_auth(api_key).send().unwrap();
-
-    let j: serde_json::Value = response.json().unwrap();
-    let d: String = j["droplet"].to_string();
-    serde_json::from_str(&d).unwrap()
+    let client = reqwest::Client::new();
+    let response = client.get(request_url).bearer_auth(api_key).send().await?;
+    let j: serde_json::Value = response.json().await?;
+    let d_s: String = j["droplet"].to_string();
+    let d = serde_json::from_str(&d_s).unwrap();
+    Ok(d)
 }
 
 // Calls the API to destroy a droplet.
-fn destroy_droplet(droplet: &Droplet) {
+async fn destroy_droplet(droplet: &Droplet) -> Result<(), InnisfreeError> {
     let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
     let request_url = DO_API_BASE_URL.to_owned() + "/" + &droplet.id.to_string();
 
-    let client = reqwest::blocking::Client::new();
-    let response = client.delete(request_url).bearer_auth(api_key).send();
+    let client = reqwest::Client::new();
+    let response = client.delete(request_url).bearer_auth(api_key).send().await;
     match response {
-        Ok(_) => {
-            debug!("Destroying droplet");
+        Ok(_r) => {
+            debug!("Droplet destroyed");
+            Ok(())
         }
         Err(e) => {
             error!("Failed to destroy droplet: {}", e);
+            Err(InnisfreeError::NetworkError { source: e })
         }
     }
 }

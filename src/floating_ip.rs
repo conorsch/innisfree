@@ -12,7 +12,7 @@ pub struct FloatingIp {
 }
 
 impl FloatingIp {
-    pub fn assign(&self) {
+    pub async fn assign(&self) {
         let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
         let req_body = json!({
             "type": "assign",
@@ -20,12 +20,13 @@ impl FloatingIp {
         });
         let request_url = DO_API_BASE_URL.to_owned() + "/" + &self.ip + "/actions";
 
-        let client = reqwest::blocking::Client::new();
+        let client = reqwest::Client::new();
         let response = client
             .post(request_url)
             .json(&req_body)
             .bearer_auth(api_key)
-            .send();
+            .send()
+            .await;
 
         match response {
             Ok(_) => {

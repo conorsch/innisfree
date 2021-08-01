@@ -3,6 +3,7 @@ use crate::proxy::proxy_handler;
 use crate::server::InnisfreeServer;
 use crate::wg::WireguardManager;
 use futures::future::join_all;
+use tokio::signal;
 
 #[derive(Debug)]
 pub struct InnisfreeManager {
@@ -15,13 +16,14 @@ pub struct InnisfreeManager {
 }
 
 impl InnisfreeManager {
-    pub fn new(
+    pub async fn new(
         tunnel_name: &str,
         services: Vec<ServicePort>,
     ) -> Result<InnisfreeManager, InnisfreeError> {
         clean_config_dir();
         let wg = WireguardManager::new()?;
-        let server = InnisfreeServer::new(&tunnel_name, services, wg.clone().wg_remote_device)?;
+        let server =
+            InnisfreeServer::new(&tunnel_name, services, wg.clone().wg_remote_device).await?;
         Ok(InnisfreeManager {
             name: tunnel_name.to_string(),
             services: server.services.to_vec(),
@@ -68,6 +70,22 @@ impl InnisfreeManager {
                     trace!("Polling socket {})...", dest_ip);
                     std::thread::sleep(std::time::Duration::from_secs(10));
                 }
+            }
+        }
+    }
+    /// Wait for an interrupt signal, then terminate gracefully,
+    /// cleaning up droplet resources before exit.
+    pub async fn block(&self) {
+        match signal::ctrl_c().await {
+            Ok(()) => {
+                warn!("Received stop signal, exiting gracefully");
+                self.clean().await;
+                debug!("Clean up complete, exiting!");
+                std::process::exit(0);
+            }
+            Err(e) => {
+                error!("Unable to register hook for ctrl+c: {}", e);
+                std::process::exit(10);
             }
         }
     }
@@ -219,13 +237,14 @@ impl InnisfreeManager {
             }
         }
     }
-    pub fn clean(&self) {
+    pub async fn clean(&self) {
         debug!("Removing local Wireguard interface");
+        // Ignore errors, since we want to try all handlers
         let _ = self.bring_down_local_wg();
-        self.server.destroy();
+        let _ = self.server.destroy().await;
     }
-    pub fn assign_floating_ip(&self, floating_ip: &str) {
-        self.server.assign_floating_ip(floating_ip);
+    pub async fn assign_floating_ip(&self, floating_ip: &str) {
+        self.server.assign_floating_ip(floating_ip).await;
     }
 }
 
@@ -273,7 +292,11 @@ pub fn open_shell() -> Result<(), std::io::Error> {
     }
 }
 
-pub async fn run_proxy(local_ip: String, dest_ip: String, services: Vec<ServicePort>) {
+pub async fn run_proxy(
+    local_ip: String,
+    dest_ip: String,
+    services: Vec<ServicePort>,
+) -> Result<(), InnisfreeError> {
     // We'll kick off a dedicated proxy for each service,
     // and collect the handles to await them all together, concurrently.
     let mut tasks = vec![];
@@ -297,8 +320,9 @@ pub async fn run_proxy(local_ip: String, dest_ip: String, services: Vec<ServiceP
             }
             Err(e) => {
                 error!("Service proxy failed: {}", e);
+                return Err(InnisfreeError::Unknown);
             }
         }
     }
-    warn!("All proxies down, exiting");
+    Ok(())
 }
