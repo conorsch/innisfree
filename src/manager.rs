@@ -23,7 +23,7 @@ impl InnisfreeManager {
         clean_config_dir();
         let wg = WireguardManager::new()?;
         let server =
-            InnisfreeServer::new(&tunnel_name, services, wg.clone().wg_remote_device).await?;
+            InnisfreeServer::new(tunnel_name, services, wg.clone().wg_remote_device).await?;
         Ok(InnisfreeManager {
             name: tunnel_name.to_string(),
             services: server.services.to_vec(),
@@ -42,8 +42,7 @@ impl InnisfreeManager {
         let ip = self.server.ipv4_address();
         let mut wg = self.wg.wg_local_device.clone();
         wg.peer.endpoint = ip;
-        let services = self.services.clone();
-        wg.write_locally(services);
+        wg.write_locally(&self.services);
         debug!("Bringing up remote Wireguard interface");
         self.bring_up_remote_wg()?;
         debug!("Bringing up local Wireguard interface");
@@ -163,7 +162,7 @@ impl InnisfreeManager {
         let cmd = "wg-quick";
         let mut fpath = std::path::PathBuf::from(make_config_dir());
         fpath.push("innisfree.conf");
-        let cmd_args = vec!["down", &fpath.to_str().unwrap()];
+        let cmd_args = vec!["down", fpath.to_str().unwrap()];
         let result = std::process::Command::new(cmd)
             .args(cmd_args)
             .stdout(std::process::Stdio::null())
@@ -187,9 +186,9 @@ impl InnisfreeManager {
     pub fn known_hosts(&self) -> String {
         let ipv4_address = &self.server.ipv4_address();
         let server_host_key = &self.server.ssh_server_keypair.public;
-        let mut host_line = ipv4_address.clone();
+        let mut host_line = ipv4_address.to_owned();
         host_line.push(' ');
-        host_line.push_str(&server_host_key);
+        host_line.push_str(server_host_key);
 
         let mut fpath = std::path::PathBuf::from(make_config_dir());
         fpath.push("known_hosts");
@@ -301,8 +300,8 @@ pub async fn run_proxy(
     // and collect the handles to await them all together, concurrently.
     let mut tasks = vec![];
     for s in services {
-        let listen_addr = format!("{}:{}", local_ip, s.port.clone());
-        let dest_addr = format!("{}:{}", dest_ip, s.port.clone());
+        let listen_addr = format!("{}:{}", local_ip, &s.port);
+        let dest_addr = format!("{}:{}", dest_ip, &s.port);
         let h = proxy_handler(listen_addr, dest_addr);
         // let ip = get_server_ip().unwrap();
         // debug!("Try accessing: {}:{} ({})", ip, s.port, s.protocol);

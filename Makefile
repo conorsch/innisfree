@@ -23,8 +23,8 @@ install:
 
 .PHONY: lint
 lint:
-	cargo fmt
-	cargo clippy
+	cargo fmt -- --check
+	cargo +nightly clippy --fix
 
 .PHONY: clean
 clean:
@@ -37,14 +37,11 @@ deb:
 
 .PHONY: install-deps
 install-deps:
-	sudo apt install -y libssl-dev libcap2-bin reprotest lld
+	sudo apt install -y libssl-dev libcap2-bin lld
 	cargo deb --version || cargo install cargo-deb
 
 .PHONY: ci
 ci: install-deps lint test
-	cargo check
-	cargo check --release
-	cargo build
 	cargo build --release
 	$(MAKE) deb
 

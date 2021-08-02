@@ -38,7 +38,7 @@ impl ServicePort {
         let raw_ports: Vec<&str> = port_spec.split(',').collect();
         let mut results: Vec<ServicePort> = vec![];
         for raw_port in raw_ports {
-            let sp = ServicePort::from_str(&raw_port);
+            let sp = ServicePort::from_str(raw_port);
             results.push(sp);
         }
         results
@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn web_ports_parse_ok() {
         let port_spec = "80/TCP,443/TCP";
-        let services = ServicePort::from_str_multi(&port_spec);
+        let services = ServicePort::from_str_multi(port_spec);
         assert!(services.len() == 2);
         let s1 = &services[0];
         assert!(s1.port == 80);
@@ -117,10 +117,10 @@ mod tests {
     fn clean_service_name() {
         let s_simple = "foo";
         let r_simple = clean_name(s_simple);
-        assert!(r_simple == "innisfree-foo".to_string());
+        assert!(r_simple == *"innisfree-foo");
 
         let s_complex = "foo-innisfree";
         let r_complex = clean_name(s_complex);
-        assert!(r_complex == "innisfree-foo".to_string());
+        assert!(r_complex == *"innisfree-foo");
     }
 }

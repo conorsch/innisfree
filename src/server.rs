@@ -54,7 +54,7 @@ impl InnisfreeServer {
             &wg_device,
             &services,
         )?;
-        let droplet = Droplet::new(&name, &user_data).await?;
+        let droplet = Droplet::new(name, &user_data).await?;
         Ok(InnisfreeServer {
             services,
             ssh_client_keypair,
@@ -144,7 +144,7 @@ impl Droplet {
         // will be populated. Might be a good use of enums here.
         loop {
             thread::sleep(time::Duration::from_secs(10));
-            match get_droplet(&self).await {
+            match get_droplet(self).await {
                 Ok(droplet) => {
                     if droplet.status == "active" {
                         return Ok(droplet);
@@ -172,7 +172,7 @@ impl Droplet {
         ip
     }
     pub async fn destroy(&self) -> Result<(), InnisfreeError> {
-        Ok(destroy_droplet(&self).await?)
+        Ok(destroy_droplet(self).await?)
     }
 }
 

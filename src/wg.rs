@@ -69,7 +69,7 @@ impl WireguardDevice {
         tera::Tera::one_off(wg_template, &context, false).unwrap()
     }
 
-    pub fn config_with_services(&self, services: Vec<ServicePort>) -> String {
+    pub fn config_with_services(&self, services: &[ServicePort]) -> String {
         let wg_template = include_str!("../files/wg0.conf.j2");
         let mut context = tera::Context::new();
         context.insert("wireguard_device", &self);
@@ -78,7 +78,7 @@ impl WireguardDevice {
         tera::Tera::one_off(wg_template, &context, false).unwrap()
     }
 
-    pub fn write_locally(&self, services: Vec<ServicePort>) {
+    pub fn write_locally(&self, services: &[ServicePort]) {
         let mut wg_config_path = std::path::PathBuf::from(make_config_dir());
         wg_config_path.push("innisfree.conf");
         let mut f = std::fs::File::create(&wg_config_path).unwrap();
@@ -234,10 +234,8 @@ mod tests {
             listenport: 80,
             keypair: kp2,
         };
-        let mut wg_hosts: Vec<WireguardHost> = vec![];
-        wg_hosts.push(h1);
-        wg_hosts.push(h2);
-        return wg_hosts;
+        let wg_hosts: Vec<WireguardHost> = vec![h1, h2];
+        wg_hosts
     }
 
     #[test]
@@ -312,8 +310,8 @@ mod tests {
     #[test]
     fn key_generation() {
         let kp = WireguardKeypair::new().unwrap();
-        assert!(!kp.public.ends_with("\n"));
-        assert!(!kp.private.ends_with("\n"));
+        assert!(!kp.public.ends_with('\n'));
+        assert!(!kp.private.ends_with('\n'));
         // Slashes '/' will be rendered as hex value &#x2F if formatting is broken
         // Confirming they're NOT in the raw key parts, looks like they slipped
         // in during development in the tera template output.

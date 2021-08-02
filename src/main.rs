@@ -94,7 +94,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .get_matches();
 
     // Primary subcommand. Soup to nuts experience.
-    if let Some(ref matches) = matches.subcommand_matches("up") {
+    if let Some(matches) = matches.subcommand_matches("up") {
         // Ensure DigitalOcean API token is defined
         let do_token;
         match env::var("DIGITALOCEAN_API_TOKEN") {
@@ -159,7 +159,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // Block forever, ctrl+c will interrupt
             mgr.block().await;
         }
-    } else if let Some(ref _matches) = matches.subcommand_matches("ssh") {
+    } else if let Some(_matches) = matches.subcommand_matches("ssh") {
         let result = manager::open_shell();
         match result {
             Ok(_) => trace!("Interactive SSH session completed successfully"),
@@ -168,7 +168,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 std::process::exit(3);
             }
         }
-    } else if let Some(ref _matches) = matches.subcommand_matches("ip") {
+    } else if let Some(_matches) = matches.subcommand_matches("ip") {
         let ip = manager::get_server_ip();
         match ip {
             Ok(ip) => {
@@ -179,7 +179,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 std::process::exit(2);
             }
         }
-    } else if let Some(ref matches) = matches.subcommand_matches("proxy") {
+    } else if let Some(matches) = matches.subcommand_matches("proxy") {
         warn!("Subcommand 'proxy' only intended for debugging, it assumes tunnel exists already");
         let dest_ip = matches.value_of("dest-ip").unwrap().to_owned();
         let port_spec = matches.value_of("ports").unwrap();
@@ -194,7 +194,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 std::process::exit(4);
             }
         };
-    } else if let Some(ref _matches) = matches.subcommand_matches("doctor") {
+    } else if let Some(_matches) = matches.subcommand_matches("doctor") {
         info!("Running doctor, to determine platform support...");
         match doctor::platform_is_supported() {
             Ok(result) => {

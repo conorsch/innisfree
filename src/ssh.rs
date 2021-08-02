@@ -52,11 +52,11 @@ impl SshKeypair {
         fop.mode(0o600);
         let mut f = fop.open(&privkey_filepath).unwrap();
         // std::fs::write(&privkey_filepath, &self.private).expect("Failed to write SSH privkey");
-        f.write_all(&self.private.as_bytes())
+        f.write_all(self.private.as_bytes())
             .expect("Failed to write SSH privkey");
 
         // Pubkey is public, so default umask is fine, expecting 644 or so.
-        let pubkey_filepath: String = privkey_filepath.clone() + ".pub";
+        let pubkey_filepath = String::from(&privkey_filepath) + ".pub";
         std::fs::write(&pubkey_filepath, &self.public).expect("Failed to write SSH pubkey");
         privkey_filepath
     }
@@ -67,7 +67,7 @@ fn create_ssh_keypair(prefix: &str) -> Result<SshKeypair, InnisfreeError> {
     let tmpfile = tempfile::NamedTempFile::new()?;
     let tmpfile = tmpfile.path();
     let privkey_filepath = String::from(tmpfile.to_str().unwrap());
-    let pubkey_filepath: String = privkey_filepath.clone() + ".pub";
+    let pubkey_filepath = String::from(&privkey_filepath) + ".pub";
 
     // ssh-keygen won't clobber, requires interactive 'y' to confirm.
     // so delete the file beforehand, then it'll create happily.
@@ -115,10 +115,10 @@ mod tests {
         let kp = SshKeypair::new("test1").unwrap();
         assert!(kp.private != kp.public);
         // trailing whitespace can screw up the yaml
-        assert!(!kp.public.ends_with("\n"));
-        assert!(!kp.public.ends_with(" "));
+        assert!(!kp.public.ends_with('\n'));
+        assert!(!kp.public.ends_with(' '));
         // for privkey, that trailing newline is crucial.
         // lost an hour to debugging that
-        assert!(kp.private.ends_with("\n"));
+        assert!(kp.private.ends_with('\n'));
     }
 }

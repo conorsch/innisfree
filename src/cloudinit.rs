@@ -74,10 +74,10 @@ pub fn generate_user_data(
 
     let cc_rendered: String = serde_yaml::to_string(&cloud_config).unwrap();
     let cc_rendered_no_header = &cc_rendered.as_bytes()[4..];
-    let cc_rendered = std::str::from_utf8(&cc_rendered_no_header).unwrap();
+    let cc_rendered = std::str::from_utf8(cc_rendered_no_header).unwrap();
     let mut cc: String = String::from("#cloud-config");
     cc.push('\n');
-    cc.push_str(&cc_rendered);
+    cc.push_str(cc_rendered);
     Ok(cc)
 }
 
@@ -119,10 +119,8 @@ mod tests {
             listenport: 80,
             keypair: kp2,
         };
-        let mut wg_hosts: Vec<WireguardHost> = vec![];
-        wg_hosts.push(h1);
-        wg_hosts.push(h2);
-        return wg_hosts;
+        let wg_hosts: Vec<WireguardHost> = vec![h1, h2];
+        wg_hosts
     }
 
     #[test]

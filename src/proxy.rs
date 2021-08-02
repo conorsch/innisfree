@@ -28,7 +28,7 @@ pub async fn transfer(mut inbound: TcpStream, proxy_addr: String) -> Result<(), 
 
 pub async fn proxy_handler(listen_addr: String, dest_addr: String) -> Result<(), InnisfreeError> {
     debug!("Proxying traffic: {} -> {}", listen_addr, dest_addr);
-    let listener = tokio::net::TcpListener::bind(listen_addr.clone()).await?;
+    let listener = tokio::net::TcpListener::bind(&listen_addr).await?;
     while let Ok((inbound, _)) = listener.accept().await {
         let transfer = transfer(inbound, dest_addr.clone()).map(|r| {
             if let Err(e) = r {
