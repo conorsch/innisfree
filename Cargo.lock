@@ -586,7 +586,7 @@ dependencies = [
 
 [[package]]
 name = "innisfree"
-version = "0.2.8-alpha.1"
+version = "0.2.8"
 dependencies = [
  "clap",
  "custom_error",
