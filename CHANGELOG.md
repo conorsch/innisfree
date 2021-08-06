@@ -1,5 +1,10 @@
 # Innisfree changelog
 
+## 0.2.9
+
+* Enable unattended-upgrades
+* Support graceful termination in systemd service
+
 ## 0.2.8
 
 * Updates all dependencies to latest

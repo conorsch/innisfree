@@ -30,7 +30,7 @@
 
 * [x] SSH should use tmpfiles, not clobber primary dir
 * [ ] Package upgrade should be async
-* [ ] Configure unattended-upgrades
+* [x] Configure unattended-upgrades
 * [x] Add cleanup methods - dir
 * [x] Add cleanup methods - droplet
 * [x] Add cleanup methods - wg
@@ -50,6 +50,7 @@
 * [x] Add lots of results for better error handling
 * [x] Add doctor subcommand for checking
 
+* [ ] Service stop should clean up resources
 * [x] Make 'release' builds reproducible
 * [ ] Make deb package builds reproducible
 * [x] Use a build.rs file for setting remap on rustcflags https://doc.rust-lang.org/cargo/reference/build-scripts.html
