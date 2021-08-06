@@ -79,7 +79,7 @@ impl InnisfreeManager {
             Ok(()) => {
                 warn!("Received stop signal, exiting gracefully");
                 self.clean().await;
-                debug!("Clean up complete, exiting!");
+                info!("Clean up complete, exiting");
                 std::process::exit(0);
             }
             Err(e) => {

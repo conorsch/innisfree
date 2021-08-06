@@ -82,26 +82,18 @@ Running as a service
 --------------------
 
 The deb package ships with a systemd config file.
-To use it, choose a unique name for the service (e.g. `foo`),
+To use it, choose a unique name for the service (e.g. `minikube`),
 and make sure your API token is exported:
-
-```
-sudo mkdir -p /etc/systemd/system/innisfree@foo.service.d/
-printf '[Service]\nEnvironment="DIGITALOCEAN_API_TOKEN=%s"\n' "$DIGITALOCEAN_API_TOKEN" > /etc/systemd/system/innisfree@foo.service.d/override.conf
-sudo systemctl daemon-reload
-sudo systemctl restart innisfree@foo
-sudo journalctl -af -u innisfree@foo
-```
-
-You can also override more settings:
 
 ```
 cat /etc/systemd/system/innisfree\@minikube.service.d/override.conf
 [Service]
 Environment="DIGITALOCEAN_API_TOKEN=<REDACTED>"
 
+# Override any settings from the shipped service
+User=conorsch
 ExecStart=
-ExecStart=/bin/bash -c "innisfree up --floating-ip 1.2.3.4 --dest-ip $(su conorsch -c 'minikube ip') -p 443/TCP --name k8s"
+ExecStart=/bin/bash -c "innisfree up --floating-ip 1.2.3.4 --dest-ip $(minikube ip) -p 443/TCP --name k8s"
 ```
 
 The above will proxy a connection to a local minikube installation.

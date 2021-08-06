@@ -50,7 +50,8 @@
 * [x] Add lots of results for better error handling
 * [x] Add doctor subcommand for checking
 
-* [ ] Service stop should clean up resources
+* [x] Service stop should clean up resources
+* [ ] Support SIGTERM and SIGKILL signals
 * [x] Make 'release' builds reproducible
 * [ ] Make deb package builds reproducible
 * [x] Use a build.rs file for setting remap on rustcflags https://doc.rust-lang.org/cargo/reference/build-scripts.html
