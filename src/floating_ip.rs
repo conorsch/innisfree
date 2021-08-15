@@ -3,11 +3,12 @@
 // to remain unchanged, but the tunnel to be rebuilt ad-hoc.
 use serde_json::json;
 use std::env;
+use std::net::IpAddr;
 
 const DO_API_BASE_URL: &str = "https://api.digitalocean.com/v2/floating_ips";
 
 pub struct FloatingIp {
-    pub ip: String,
+    pub ip: IpAddr,
     pub droplet_id: u32,
 }
 
@@ -18,7 +19,7 @@ impl FloatingIp {
             "type": "assign",
             "droplet_id": self.droplet_id,
         });
-        let request_url = DO_API_BASE_URL.to_owned() + "/" + &self.ip + "/actions";
+        let request_url = DO_API_BASE_URL.to_owned() + "/" + &self.ip.to_string() + "/actions";
 
         let client = reqwest::Client::new();
         let response = client

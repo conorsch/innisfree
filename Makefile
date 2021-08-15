@@ -24,7 +24,7 @@ install:
 .PHONY: lint
 lint:
 	cargo fmt -- --check
-	cargo +nightly clippy --fix
+	cargo clippy
 
 .PHONY: clean
 clean:

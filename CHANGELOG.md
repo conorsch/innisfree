@@ -1,5 +1,9 @@
 # Innisfree changelog
 
+## 0.2.10
+
+* Dev only: more explicit typing for IP addresses throughout
+
 ## 0.2.9
 
 * Enable unattended-upgrades

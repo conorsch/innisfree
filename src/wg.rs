@@ -1,4 +1,5 @@
 use std::io::prelude::*;
+use std::net::IpAddr;
 use std::process::{Command, Stdio};
 use std::str;
 
@@ -42,8 +43,8 @@ impl WireguardKeypair {
 #[derive(Debug, Serialize, Clone)]
 pub struct WireguardHost {
     pub name: String,
-    pub address: String,
-    pub endpoint: String,
+    pub address: IpAddr,
+    pub endpoint: Option<IpAddr>,
     pub listenport: i32,
     pub keypair: WireguardKeypair,
 }
@@ -89,12 +90,12 @@ impl WireguardDevice {
 
 #[derive(Debug, Clone)]
 pub struct WireguardManager {
-    pub wg_local_ip: String,
+    pub wg_local_ip: IpAddr,
     wg_local_name: String,
     wg_local_host: WireguardHost,
     pub wg_local_device: WireguardDevice,
 
-    pub wg_remote_ip: String,
+    pub wg_remote_ip: IpAddr,
     wg_remote_name: String,
     wg_remote_host: WireguardHost,
     pub wg_remote_device: WireguardDevice,
@@ -102,35 +103,35 @@ pub struct WireguardManager {
 
 impl WireguardManager {
     pub fn new() -> Result<WireguardManager, InnisfreeError> {
-        let wg_local_ip = WIREGUARD_LOCAL_IP.to_string();
+        let wg_local_ip: IpAddr = WIREGUARD_LOCAL_IP.parse().unwrap();
         let wg_local_name = "innisfree_local".to_string();
         let wg_local_keypair = WireguardKeypair::new()?;
         let wg_local_host = WireguardHost {
-            name: wg_local_name.clone(),
-            address: wg_local_ip.clone(),
-            endpoint: "".to_string(),
+            name: wg_local_name.to_owned(),
+            address: wg_local_ip,
+            endpoint: None,
             listenport: 0,
             keypair: wg_local_keypair,
         };
 
-        let wg_remote_ip = WIREGUARD_REMOTE_IP.to_string();
+        let wg_remote_ip: IpAddr = WIREGUARD_REMOTE_IP.parse().unwrap();
         let wg_remote_name = "innisfree_remote".to_string();
         let wg_remote_keypair = WireguardKeypair::new()?;
         let wg_remote_host = WireguardHost {
-            name: wg_remote_name.clone(),
-            address: wg_remote_ip.clone(),
-            endpoint: "".to_string(),
+            name: wg_remote_name.to_owned(),
+            address: wg_remote_ip,
+            endpoint: None,
             listenport: WIREGUARD_LISTEN_PORT,
             keypair: wg_remote_keypair,
         };
 
         let wg_local_device = WireguardDevice {
-            name: wg_local_name.clone(),
+            name: wg_local_name.to_owned(),
             interface: wg_local_host.clone(),
             peer: wg_remote_host.clone(),
         };
         let wg_remote_device = WireguardDevice {
-            name: wg_remote_name.clone(),
+            name: wg_remote_name.to_owned(),
             interface: wg_remote_host.clone(),
             peer: wg_local_host.clone(),
         };
@@ -221,16 +222,16 @@ mod tests {
         let kp1 = WireguardKeypair::new().unwrap();
         let h1 = WireguardHost {
             name: "foo1".to_string(),
-            address: "127.0.0.1".to_string(),
-            endpoint: "1.1.1.1".to_string(),
+            address: "127.0.0.1".parse().unwrap(),
+            endpoint: Some("1.1.1.1".parse().unwrap()),
             listenport: 80,
             keypair: kp1,
         };
         let kp2 = WireguardKeypair::new().unwrap();
         let h2 = WireguardHost {
             name: "foo2".to_string(),
-            address: "127.0.0.1".to_string(),
-            endpoint: "".to_string(),
+            address: "127.0.0.1".parse().unwrap(),
+            endpoint: None,
             listenport: 80,
             keypair: kp2,
         };

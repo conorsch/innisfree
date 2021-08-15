@@ -85,7 +85,7 @@ fn nginx_streams(services: &[ServicePort]) -> Result<String, InnisfreeError> {
     let nginx_config = include_str!("../files/stream.conf.j2");
     let mut context = tera::Context::new();
     context.insert("services", services);
-    context.insert("dest_ip", WIREGUARD_LOCAL_IP);
+    context.insert("dest_ip", &WIREGUARD_LOCAL_IP.to_string());
     // Disable autoescaping, since it breaks wg key contents
     let result = tera::Tera::one_off(nginx_config, &context, false);
     match result {
@@ -106,16 +106,16 @@ mod tests {
         let kp1 = WireguardKeypair::new().unwrap();
         let h1 = WireguardHost {
             name: "foo1".to_string(),
-            address: "127.0.0.1".to_string(),
-            endpoint: "1.1.1.1".to_string(),
+            address: "127.0.0.1".parse().unwrap(),
+            endpoint: Some("1.1.1.1".parse().unwrap()),
             listenport: 80,
             keypair: kp1,
         };
         let kp2 = WireguardKeypair::new().unwrap();
         let h2 = WireguardHost {
             name: "foo2".to_string(),
-            address: "127.0.0.1".to_string(),
-            endpoint: "".to_string(),
+            address: "127.0.0.1".parse().unwrap(),
+            endpoint: None,
             listenport: 80,
             keypair: kp2,
         };

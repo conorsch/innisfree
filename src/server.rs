@@ -2,6 +2,7 @@
 // use digitalocean::prelude::*;
 use std::collections::HashMap;
 use std::env;
+use std::net::IpAddr;
 use std::thread;
 use std::time;
 
@@ -64,13 +65,14 @@ impl InnisfreeServer {
             name: name.to_string(),
         })
     }
-    pub fn ipv4_address(&self) -> String {
+    pub fn ipv4_address(&self) -> IpAddr {
         let droplet = &self.droplet;
         droplet.ipv4_address()
     }
     pub async fn assign_floating_ip(&self, floating_ip: &str) {
+        let fip: IpAddr = floating_ip.parse().unwrap();
         let f = FloatingIp {
-            ip: floating_ip.to_owned(),
+            ip: fip,
             droplet_id: self.droplet.id,
         };
         f.assign().await;
@@ -161,14 +163,15 @@ impl Droplet {
     }
 
     // IPv4 lookup can fail, should return Result to force handling.
-    pub fn ipv4_address(&self) -> String {
-        let mut ip: String = "".to_string();
+    pub fn ipv4_address(&self) -> IpAddr {
+        let mut s: String = "".to_string();
         for v4_network in &self.networks["v4"] {
             if v4_network["type"] == "public" {
-                ip = v4_network["ip_address"].clone();
+                s = v4_network["ip_address"].clone();
                 break;
             }
         }
+        let ip: IpAddr = s.parse().unwrap();
         ip
     }
     pub async fn destroy(&self) -> Result<(), InnisfreeError> {

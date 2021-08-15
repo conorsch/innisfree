@@ -2,6 +2,7 @@ use clap::Arg;
 use clap::{crate_version, App};
 use std::env;
 use std::error::Error;
+use std::net::IpAddr;
 use std::sync::Arc;
 
 #[macro_use]
@@ -106,7 +107,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             std::process::exit(1);
         }
 
-        let dest_ip = matches.value_of("dest-ip").unwrap().to_owned();
+        let dest_ip: IpAddr = matches.value_of("dest-ip").unwrap().parse().unwrap();
         let port_spec = matches.value_of("ports").unwrap();
         let floating_ip = matches.value_of("floating-ip").unwrap();
         let tunnel_name = config::clean_name(matches.value_of("name").unwrap());
@@ -146,8 +147,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             info!("Server ready! IPv4 address: {}", ip);
         }
         debug!("Try logging in with 'innisfree ssh'");
-        let local_ip = String::from(WIREGUARD_LOCAL_IP);
-        if dest_ip != "127.0.0.1" {
+        let local_ip: IpAddr = WIREGUARD_LOCAL_IP.parse().unwrap();
+        if &dest_ip.to_string() != "127.0.0.1" {
             tokio::spawn(manager::run_proxy(local_ip, dest_ip, mgr.services.clone()));
             mgr.block().await;
         } else {
@@ -181,10 +182,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     } else if let Some(matches) = matches.subcommand_matches("proxy") {
         warn!("Subcommand 'proxy' only intended for debugging, it assumes tunnel exists already");
-        let dest_ip = matches.value_of("dest-ip").unwrap().to_owned();
+        let dest_ip: IpAddr = matches.value_of("dest-ip").unwrap().parse().unwrap();
         let port_spec = matches.value_of("ports").unwrap();
         let ports = config::ServicePort::from_str_multi(port_spec);
-        let local_ip = String::from(WIREGUARD_LOCAL_IP);
+        let local_ip: IpAddr = WIREGUARD_LOCAL_IP.parse().unwrap();
         warn!("Ctrl+c will not halt proxy, use ctrl+z and `kill -9 %1`");
         info!("Starting proxy for services {:?}", ports);
         match manager::run_proxy(local_ip, dest_ip, ports).await {

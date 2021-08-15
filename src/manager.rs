@@ -3,12 +3,13 @@ use crate::proxy::proxy_handler;
 use crate::server::InnisfreeServer;
 use crate::wg::WireguardManager;
 use futures::future::join_all;
+use std::net::{IpAddr, SocketAddr, TcpStream};
 use tokio::signal;
 
 #[derive(Debug)]
 pub struct InnisfreeManager {
     pub services: Vec<ServicePort>,
-    dest_ip: String,
+    dest_ip: IpAddr,
     floating_ip: Option<String>,
     pub server: InnisfreeServer,
     pub name: String,
@@ -27,8 +28,8 @@ impl InnisfreeManager {
         Ok(InnisfreeManager {
             name: tunnel_name.to_string(),
             services: server.services.to_vec(),
-            dest_ip: "127.0.0.1".to_string(),
-            floating_ip: Some("".to_string()),
+            dest_ip: "127.0.0.1".parse().unwrap(),
+            floating_ip: None,
             server,
             wg,
         })
@@ -41,7 +42,7 @@ impl InnisfreeManager {
         // self.server.write_user_data();
         let ip = self.server.ipv4_address();
         let mut wg = self.wg.wg_local_device.clone();
-        wg.peer.endpoint = ip;
+        wg.peer.endpoint = Some(ip);
         wg.write_locally(&self.services);
         debug!("Bringing up remote Wireguard interface");
         self.bring_up_remote_wg()?;
@@ -55,10 +56,9 @@ impl InnisfreeManager {
         self.run_ssh_cmd(cmd)
     }
     fn wait_for_ssh(&self) {
-        let mut dest_ip: String = self.server.ipv4_address();
-        dest_ip.push_str(":22");
+        let dest_ip = SocketAddr::new(self.server.ipv4_address(), 22);
         loop {
-            let stream = std::net::TcpStream::connect(&dest_ip);
+            let stream = TcpStream::connect(&dest_ip);
             match stream {
                 Ok(_) => {
                     debug!("SSH port is open, proceeding");
@@ -95,7 +95,7 @@ impl InnisfreeManager {
         let status = std::process::Command::new("ping")
             .arg("-c1")
             .arg("-w5")
-            .arg(&ip)
+            .arg(&ip.to_string())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status();
@@ -186,7 +186,7 @@ impl InnisfreeManager {
     pub fn known_hosts(&self) -> String {
         let ipv4_address = &self.server.ipv4_address();
         let server_host_key = &self.server.ssh_server_keypair.public;
-        let mut host_line = ipv4_address.to_owned();
+        let mut host_line = ipv4_address.to_string();
         host_line.push(' ');
         host_line.push_str(server_host_key);
 
@@ -201,7 +201,7 @@ impl InnisfreeManager {
         let known_hosts = &self.known_hosts();
         let mut known_hosts_opt = "UserKnownHostsFile=".to_owned();
         known_hosts_opt.push_str(known_hosts);
-        let ipv4_address = &self.server.ipv4_address();
+        let ipv4_address = &self.server.ipv4_address().to_string();
         let mut cmd_args = vec![
             "-l",
             "innisfree",
@@ -292,8 +292,8 @@ pub fn open_shell() -> Result<(), std::io::Error> {
 }
 
 pub async fn run_proxy(
-    local_ip: String,
-    dest_ip: String,
+    local_ip: IpAddr,
+    dest_ip: IpAddr,
     services: Vec<ServicePort>,
 ) -> Result<(), InnisfreeError> {
     // We'll kick off a dedicated proxy for each service,
