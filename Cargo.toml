@@ -17,6 +17,7 @@ custom_error = "~1.9"
 env_logger = "~0.9"
 futures = "0.3"
 home = "~0.5"
+ipgen = "~1"
 log = "~0.4"
 rand = "~0.8"
 reqwest = { version = "~0.11", features = ["json", "rustls"] }

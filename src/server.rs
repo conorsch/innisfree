@@ -20,7 +20,7 @@ use crate::cloudinit::generate_user_data;
 use crate::config::{make_config_dir, InnisfreeError, ServicePort};
 use crate::floating_ip::FloatingIp;
 use crate::ssh::SshKeypair;
-use crate::wg::WireguardDevice;
+use crate::wg::WireguardManager;
 
 const DO_REGION: &str = "sfo2";
 const DO_SIZE: &str = "s-1vcpu-1gb";
@@ -35,7 +35,7 @@ pub struct InnisfreeServer {
     pub services: Vec<ServicePort>,
     pub ssh_client_keypair: SshKeypair,
     pub ssh_server_keypair: SshKeypair,
-    wg_device: WireguardDevice,
+    wg_mgr: WireguardManager,
     droplet: Droplet,
     name: String,
 }
@@ -44,7 +44,7 @@ impl InnisfreeServer {
     pub async fn new(
         name: &str,
         services: Vec<ServicePort>,
-        wg_device: WireguardDevice,
+        wg_mgr: WireguardManager
     ) -> Result<InnisfreeServer, InnisfreeError> {
         // Initialize variables outside struct, so we'll need to pass them around
         let ssh_client_keypair = SshKeypair::new("client")?;
@@ -52,7 +52,7 @@ impl InnisfreeServer {
         let user_data = generate_user_data(
             &ssh_client_keypair,
             &ssh_server_keypair,
-            &wg_device,
+            &wg_mgr,
             &services,
         )?;
         let droplet = Droplet::new(name, &user_data).await?;
@@ -60,7 +60,7 @@ impl InnisfreeServer {
             services,
             ssh_client_keypair,
             ssh_server_keypair,
-            wg_device,
+            wg_mgr,
             droplet,
             name: name.to_string(),
         })
@@ -84,7 +84,7 @@ impl InnisfreeServer {
         let user_data = generate_user_data(
             &self.ssh_client_keypair,
             &self.ssh_server_keypair,
-            &self.wg_device,
+            &self.wg_mgr,
             &self.services,
         )
         .unwrap();

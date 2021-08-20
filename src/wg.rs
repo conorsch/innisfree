@@ -10,11 +10,13 @@ extern crate tera;
 extern crate serde;
 use serde::Serialize;
 
-// Cutting corners here. IP addresses should be customizable,
-// and be a valid /30.
+extern crate ipgen;
+
 const WIREGUARD_LISTEN_PORT: i32 = 51820;
-pub const WIREGUARD_LOCAL_IP: &str = "10.50.0.1";
-pub const WIREGUARD_REMOTE_IP: &str = "10.50.0.2";
+// Cutting corners here. IP addresses should be customizable,
+// but we'll default to a /28, and generate deterministically
+// within that range based on service name.
+pub const WIREGUARD_SUBNET: &str = "10.50.0.1/28";
 
 #[derive(Debug, Serialize, Clone)]
 pub struct WireguardKeypair {
@@ -102,8 +104,11 @@ pub struct WireguardManager {
 }
 
 impl WireguardManager {
-    pub fn new() -> Result<WireguardManager, InnisfreeError> {
-        let wg_local_ip: IpAddr = WIREGUARD_LOCAL_IP.parse().unwrap();
+    pub fn new(service_name: &str) -> Result<WireguardManager, InnisfreeError> {
+        let wg_network = WIREGUARD_SUBNET.parse()?;
+        let mut local_name = String::from(service_name);
+        local_name.push_str("-local");
+        let wg_local_ip = ipgen::ip(&local_name, wg_network)?;
         let wg_local_name = "innisfree_local".to_string();
         let wg_local_keypair = WireguardKeypair::new()?;
         let wg_local_host = WireguardHost {
@@ -114,7 +119,9 @@ impl WireguardManager {
             keypair: wg_local_keypair,
         };
 
-        let wg_remote_ip: IpAddr = WIREGUARD_REMOTE_IP.parse().unwrap();
+        let mut remote_name = String::from(service_name);
+        remote_name.push_str("-remote");
+        let wg_remote_ip = ipgen::ip(&remote_name, wg_network)?;
         let wg_remote_name = "innisfree_remote".to_string();
         let wg_remote_keypair = WireguardKeypair::new()?;
         let wg_remote_host = WireguardHost {

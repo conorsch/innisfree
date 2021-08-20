@@ -1,11 +1,13 @@
 // Stores business logic around creating the "cloud-init.cfg" YAML file,
 // used to customize a server on first boot.
+use std::net::IpAddr;
+
 extern crate serde;
 use serde::{Deserialize, Serialize};
 
 use crate::config::{InnisfreeError, ServicePort};
 use crate::ssh::SshKeypair;
-use crate::wg::{WireguardDevice, WIREGUARD_LOCAL_IP};
+use crate::wg::WireguardManager;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CloudConfig {
@@ -37,7 +39,7 @@ pub struct CloudConfigUser {
 pub fn generate_user_data(
     ssh_client_keypair: &SshKeypair,
     ssh_server_keypair: &SshKeypair,
-    wg_device: &WireguardDevice,
+    wg_mgr: &WireguardManager,
     services: &[ServicePort],
 ) -> Result<String, InnisfreeError> {
     let user_data = include_str!("../files/cloudinit.cfg");
@@ -55,7 +57,7 @@ pub fn generate_user_data(
 
     let wg = CloudConfigFile {
         // Use the template without firewall rules
-        content: wg_device.config(),
+        content: wg_mgr.wg_remote_device.config(),
         owner: String::from("root:root"),
         permissions: String::from("0644"),
         path: String::from("/tmp/innisfree.conf"),
@@ -63,7 +65,7 @@ pub fn generate_user_data(
     cloud_config.write_files.push(wg);
 
     let nginx = CloudConfigFile {
-        content: nginx_streams(services)?,
+        content: nginx_streams(services, wg_mgr.wg_local_device.interface.address)?,
         owner: String::from("root:root"),
         permissions: String::from("0644"),
         path: String::from("/etc/nginx/conf.d/stream/innisfree.conf"),
@@ -81,11 +83,11 @@ pub fn generate_user_data(
     Ok(cc)
 }
 
-fn nginx_streams(services: &[ServicePort]) -> Result<String, InnisfreeError> {
+fn nginx_streams(services: &[ServicePort], dest_ip: IpAddr) -> Result<String, InnisfreeError> {
     let nginx_config = include_str!("../files/stream.conf.j2");
     let mut context = tera::Context::new();
     context.insert("services", services);
-    context.insert("dest_ip", &WIREGUARD_LOCAL_IP.to_string());
+    context.insert("dest_ip", &dest_ip.to_string());
     // Disable autoescaping, since it breaks wg key contents
     let result = tera::Tera::one_off(nginx_config, &context, false);
     match result {

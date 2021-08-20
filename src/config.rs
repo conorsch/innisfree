@@ -1,5 +1,6 @@
 extern crate custom_error;
 extern crate home;
+extern crate ipgen;
 use custom_error::custom_error;
 
 use serde::Serialize;
@@ -83,6 +84,7 @@ custom_error! {pub InnisfreeError
     NetworkError{source: reqwest::Error} = "Network error, check connection",
     PlatformError = "Platform error, only Linux is supported",
     Template{source: tera::Error} = "Template generation failed",
+    IpGenError{source: ipgen::Error} = "Failed to generate IP address",
     Unknown = "unknown error",
 }
 

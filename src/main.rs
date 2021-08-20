@@ -19,7 +19,6 @@ mod proxy;
 mod server;
 mod ssh;
 mod wg;
-use crate::wg::WIREGUARD_LOCAL_IP;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -147,7 +146,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             info!("Server ready! IPv4 address: {}", ip);
         }
         debug!("Try logging in with 'innisfree ssh'");
-        let local_ip: IpAddr = WIREGUARD_LOCAL_IP.parse().unwrap();
+        let local_ip: IpAddr = mgr.wg.wg_local_device.interface.address;
         if &dest_ip.to_string() != "127.0.0.1" {
             tokio::spawn(manager::run_proxy(local_ip, dest_ip, mgr.services.clone()));
             mgr.block().await;
@@ -185,7 +184,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let dest_ip: IpAddr = matches.value_of("dest-ip").unwrap().parse().unwrap();
         let port_spec = matches.value_of("ports").unwrap();
         let ports = config::ServicePort::from_str_multi(port_spec);
-        let local_ip: IpAddr = WIREGUARD_LOCAL_IP.parse().unwrap();
+        let local_ip: IpAddr = "127.0.0.1".parse().unwrap();
         warn!("Ctrl+c will not halt proxy, use ctrl+z and `kill -9 %1`");
         info!("Starting proxy for services {:?}", ports);
         match manager::run_proxy(local_ip, dest_ip, ports).await {
