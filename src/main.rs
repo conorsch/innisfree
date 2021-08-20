@@ -68,8 +68,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         .short('f'),
                 ),
         )
-        .subcommand(App::new("ssh").about("Open interactive SSH shell on cloud node"))
-        .subcommand(App::new("ip").about("Display IPv4 address for cloud node"))
+        .subcommand(
+            App::new("ssh")
+                .about("Open interactive SSH shell on cloud node")
+                .arg(
+                    Arg::new("name")
+                        .about("title for the service, used for cloud node and systemd service")
+                        .default_value("innisfree")
+                        .env("INNISFREE_NAME")
+                        .long("name")
+                        .short('n'),
+                ),
+        )
+        .subcommand(
+            App::new("ip")
+                .about("Display IPv4 address for cloud node")
+                .arg(
+                    Arg::new("name")
+                        .about("title for the service, used for cloud node and systemd service")
+                        .default_value("innisfree")
+                        .env("INNISFREE_NAME")
+                        .long("name")
+                        .short('n'),
+                ),
+        )
         .subcommand(App::new("doctor").about("Run checks to evaluate platform support"))
         .subcommand(
             App::new("proxy")
@@ -160,22 +182,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
             mgr.block().await;
         }
     } else if let Some(_matches) = matches.subcommand_matches("ssh") {
-        let result = manager::open_shell();
+        let tunnel_name = config::clean_name(matches.value_of("name").unwrap());
+        let result = manager::open_shell(&tunnel_name);
         match result {
             Ok(_) => trace!("Interactive SSH session completed successfully"),
             Err(_) => {
-                error!("Server not found. Try running 'innisfree up' first");
+                error!(
+                    "Server not found. Try running 'innisfree up' first, or pass --name=<service>"
+                );
                 std::process::exit(3);
             }
         }
-    } else if let Some(_matches) = matches.subcommand_matches("ip") {
-        let ip = manager::get_server_ip();
+    } else if let Some(matches) = matches.subcommand_matches("ip") {
+        let tunnel_name = config::clean_name(matches.value_of("name").unwrap());
+        let ip = manager::get_server_ip(&tunnel_name);
         match ip {
             Ok(ip) => {
                 println!("{}", ip);
             }
             Err(_) => {
-                error!("Server not found. Try running 'innisfree up' first.");
+                error!(
+                    "Server not found. Try running 'innisfree up' first, or pass --name=<service>."
+                );
                 std::process::exit(2);
             }
         }

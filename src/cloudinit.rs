@@ -99,7 +99,7 @@ fn nginx_streams(services: &[ServicePort], dest_ip: IpAddr) -> Result<String, In
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wg::{WireguardDevice, WireguardHost, WireguardKeypair};
+    use crate::wg::{WireguardHost, WireguardKeypair};
 
     // Helper function for reusable structs
     // This function is copied from src/wg.rs,
@@ -129,14 +129,9 @@ mod tests {
     fn cloudconfig_has_header() {
         let kp1 = SshKeypair::new("server-test1").unwrap();
         let kp2 = SshKeypair::new("server-test2").unwrap();
-        let wg_hosts = _generate_hosts();
-        let wg_device = WireguardDevice {
-            name: String::from("foo1"),
-            interface: wg_hosts[1].clone(),
-            peer: wg_hosts[0].clone(),
-        };
+        let wg_mgr = WireguardManager::new("foo-test").unwrap();
         let ports = vec![];
-        let user_data = generate_user_data(&kp1, &kp2, &wg_device, &ports).unwrap();
+        let user_data = generate_user_data(&kp1, &kp2, &wg_mgr, &ports).unwrap();
         assert!(user_data.ends_with(""));
         assert!(user_data.starts_with("#cloud-config"));
         assert!(user_data.starts_with("#cloud-config\n"));

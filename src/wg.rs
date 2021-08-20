@@ -81,9 +81,10 @@ impl WireguardDevice {
         tera::Tera::one_off(wg_template, &context, false).unwrap()
     }
 
-    pub fn write_locally(&self, services: &[ServicePort]) {
-        let mut wg_config_path = std::path::PathBuf::from(make_config_dir());
-        wg_config_path.push("innisfree.conf");
+    pub fn write_locally(&self, service_name: &str, services: &[ServicePort]) {
+        let mut wg_config_path = std::path::PathBuf::from(make_config_dir(service_name));
+        let wg_iface_name = format!("{}.conf", service_name);
+        wg_config_path.push(wg_iface_name);
         let mut f = std::fs::File::create(&wg_config_path).unwrap();
         let wg_config = &self.config_with_services(services);
         f.write_all(wg_config.as_bytes()).unwrap();

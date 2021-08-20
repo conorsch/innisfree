@@ -21,10 +21,9 @@ impl InnisfreeManager {
         tunnel_name: &str,
         services: Vec<ServicePort>,
     ) -> Result<InnisfreeManager, InnisfreeError> {
-        clean_config_dir();
+        clean_config_dir(tunnel_name);
         let wg = WireguardManager::new(&tunnel_name.to_owned())?;
-        let server =
-            InnisfreeServer::new(tunnel_name, services, wg.clone()).await?;
+        let server = InnisfreeServer::new(tunnel_name, services, wg.clone()).await?;
         Ok(InnisfreeManager {
             name: tunnel_name.to_owned(),
             services: server.services.to_vec(),
@@ -43,7 +42,7 @@ impl InnisfreeManager {
         let ip = self.server.ipv4_address();
         let mut wg = self.wg.wg_local_device.clone();
         wg.peer.endpoint = Some(ip);
-        wg.write_locally(&self.services);
+        wg.write_locally(&self.name, &self.services);
         debug!("Bringing up remote Wireguard interface");
         self.bring_up_remote_wg()?;
         debug!("Bringing up local Wireguard interface");
@@ -119,6 +118,9 @@ impl InnisfreeManager {
             }
         }
     }
+    pub fn config_dir(&self) -> Result<String, InnisfreeError> {
+        Ok(make_config_dir(&self.name))
+    }
     pub fn bring_up_remote_wg(&self) -> Result<(), InnisfreeError> {
         let cmd = vec!["wg-quick", "up", "/tmp/innisfree.conf"];
         trace!("Activating remote wg interface");
@@ -130,8 +132,8 @@ impl InnisfreeManager {
         let _down = self.bring_down_local_wg();
         trace!("Building path to local wg config");
         // Bring down in case the config was running with a different host
-        let mut fpath = std::path::PathBuf::from(make_config_dir());
-        fpath.push("innisfree.conf");
+        let mut fpath = std::path::PathBuf::from(&self.config_dir()?);
+        fpath.push(format!("{}.conf", &self.name));
         trace!("Running local wg-quick cmd");
         let result = std::process::Command::new("wg-quick")
             .arg("up")
@@ -160,8 +162,8 @@ impl InnisfreeManager {
     }
     pub fn bring_down_local_wg(&self) -> Result<(), InnisfreeError> {
         let cmd = "wg-quick";
-        let mut fpath = std::path::PathBuf::from(make_config_dir());
-        fpath.push("innisfree.conf");
+        let mut fpath = std::path::PathBuf::from(make_config_dir(&self.name));
+        fpath.push(format!("{}.conf", &self.name));
         let cmd_args = vec!["down", fpath.to_str().unwrap()];
         let result = std::process::Command::new(cmd)
             .args(cmd_args)
@@ -190,14 +192,14 @@ impl InnisfreeManager {
         host_line.push(' ');
         host_line.push_str(server_host_key);
 
-        let mut fpath = std::path::PathBuf::from(make_config_dir());
+        let mut fpath = std::path::PathBuf::from(make_config_dir(&self.name));
         fpath.push("known_hosts");
         std::fs::write(&fpath.to_str().unwrap(), host_line).expect("Failed to create known_hosts");
         return fpath.to_str().unwrap().to_string();
     }
     pub fn run_ssh_cmd(&self, cmd: Vec<&str>) -> Result<(), InnisfreeError> {
         trace!("Entering run_ssh_cmd");
-        let ssh_kp = &self.server.ssh_client_keypair.write_locally();
+        let ssh_kp = &self.server.ssh_client_keypair.write_locally(&self.name);
         let known_hosts = &self.known_hosts();
         let mut known_hosts_opt = "UserKnownHostsFile=".to_owned();
         known_hosts_opt.push_str(known_hosts);
@@ -247,9 +249,9 @@ impl InnisfreeManager {
     }
 }
 
-pub fn get_server_ip() -> Result<String, std::io::Error> {
+pub fn get_server_ip(service_name: &str) -> Result<String, std::io::Error> {
     trace!("Looking up server IP from known_hosts file");
-    let mut fpath = std::path::PathBuf::from(make_config_dir());
+    let mut fpath = std::path::PathBuf::from(make_config_dir(service_name));
     fpath.push("known_hosts");
     let known_hosts = std::fs::read_to_string(&fpath)?;
     let host_parts: Vec<&str> = known_hosts.split(' ').collect();
@@ -257,14 +259,14 @@ pub fn get_server_ip() -> Result<String, std::io::Error> {
     Ok(ip)
 }
 
-pub fn open_shell() -> Result<(), std::io::Error> {
-    let mut client_key = std::path::PathBuf::from(make_config_dir());
+pub fn open_shell(service_name: &str) -> Result<(), std::io::Error> {
+    let mut client_key = std::path::PathBuf::from(make_config_dir(service_name));
     client_key.push("client_id_ed25519");
-    let mut known_hosts = std::path::PathBuf::from(make_config_dir());
+    let mut known_hosts = std::path::PathBuf::from(make_config_dir(service_name));
     known_hosts.push("known_hosts");
     let mut known_hosts_opt = "UserKnownHostsFile=".to_owned();
     known_hosts_opt.push_str(known_hosts.to_str().unwrap());
-    let ipv4_address = match get_server_ip() {
+    let ipv4_address = match get_server_ip(service_name) {
         Ok(ip) => ip,
         Err(e) => {
             return Err(e);

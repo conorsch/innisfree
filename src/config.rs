@@ -46,16 +46,17 @@ impl ServicePort {
     }
 }
 
-pub fn make_config_dir() -> String {
+pub fn make_config_dir(service_name: &str) -> String {
     let mut config_dir = home::home_dir().unwrap();
     config_dir.push(".config");
     config_dir.push("innisfree");
+    config_dir.push(service_name);
     std::fs::create_dir_all(&config_dir).unwrap();
     config_dir.to_str().unwrap().to_string()
 }
 
-pub fn clean_config_dir() {
-    let config_dir = make_config_dir();
+pub fn clean_config_dir(service_name: &str) {
+    let config_dir = make_config_dir(service_name);
     for f in std::fs::read_dir(config_dir).unwrap() {
         let f = f.unwrap();
         std::fs::remove_file(f.path()).unwrap();

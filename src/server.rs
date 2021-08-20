@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::cloudinit::generate_user_data;
-use crate::config::{make_config_dir, InnisfreeError, ServicePort};
+use crate::config::{InnisfreeError, ServicePort};
 use crate::floating_ip::FloatingIp;
 use crate::ssh::SshKeypair;
 use crate::wg::WireguardManager;
@@ -44,17 +44,13 @@ impl InnisfreeServer {
     pub async fn new(
         name: &str,
         services: Vec<ServicePort>,
-        wg_mgr: WireguardManager
+        wg_mgr: WireguardManager,
     ) -> Result<InnisfreeServer, InnisfreeError> {
         // Initialize variables outside struct, so we'll need to pass them around
         let ssh_client_keypair = SshKeypair::new("client")?;
         let ssh_server_keypair = SshKeypair::new("server")?;
-        let user_data = generate_user_data(
-            &ssh_client_keypair,
-            &ssh_server_keypair,
-            &wg_mgr,
-            &services,
-        )?;
+        let user_data =
+            generate_user_data(&ssh_client_keypair, &ssh_server_keypair, &wg_mgr, &services)?;
         let droplet = Droplet::new(name, &user_data).await?;
         Ok(InnisfreeServer {
             services,
@@ -76,21 +72,6 @@ impl InnisfreeServer {
             droplet_id: self.droplet.id,
         };
         f.assign().await;
-    }
-    // Dead code because it's debug-only, might want again.
-    #[allow(dead_code)]
-    pub fn write_user_data(&self) {
-        // Write full config locally for debugging;
-        let user_data = generate_user_data(
-            &self.ssh_client_keypair,
-            &self.ssh_server_keypair,
-            &self.wg_mgr,
-            &self.services,
-        )
-        .unwrap();
-        let mut fpath = std::path::PathBuf::from(make_config_dir());
-        fpath.push("cloudinit.cfg");
-        std::fs::write(&fpath.to_str().unwrap(), &user_data).expect("Failed to create cloud-init");
     }
     pub async fn destroy(&self) -> Result<(), InnisfreeError> {
         // Destroys backing droplet

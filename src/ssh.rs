@@ -29,8 +29,8 @@ impl SshKeypair {
         key_name
     }
     // Store keypair on disk, in config dir
-    pub fn write_locally(&self) -> String {
-        let config_dir = make_config_dir();
+    pub fn write_locally(&self, service_name: &str) -> String {
+        let config_dir = make_config_dir(service_name);
         let key_name = self.filename();
         let privkey_filepath: String = Path::new(&config_dir)
             .join(key_name)
