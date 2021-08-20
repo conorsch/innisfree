@@ -167,21 +167,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let ip = &mgr.server.ipv4_address();
             info!("Server ready! IPv4 address: {}", ip);
         }
-        debug!("Try logging in with 'innisfree ssh'");
+        if tunnel_name == "innisfree" {
+            debug!("Try logging in with 'innisfree ssh'");
+        } else {
+            debug!("Try logging in with 'innisfree ssh -n {}'", tunnel_name);
+        }
         let local_ip: IpAddr = mgr.wg.wg_local_device.interface.address;
         if &dest_ip.to_string() != "127.0.0.1" {
             tokio::spawn(manager::run_proxy(local_ip, dest_ip, mgr.services.clone()));
             mgr.block().await;
         } else {
             info!(
-                "Ready to listen on {}. Start local services. Make sure to bind to 0.0.0.0, rather than 127.0.0.1!",
-                port_spec
+                "Ready to listen on {}. Start local services. Make sure to bind to {}, rather than 127.0.0.1!",
+                port_spec,
+                mgr.wg.wg_local_ip,
             );
             debug!("Blocking forever. Press ctrl+c to tear down the tunnel and destroy server.");
             // Block forever, ctrl+c will interrupt
             mgr.block().await;
         }
-    } else if let Some(_matches) = matches.subcommand_matches("ssh") {
+    } else if let Some(matches) = matches.subcommand_matches("ssh") {
         let tunnel_name = config::clean_name(matches.value_of("name").unwrap());
         let result = manager::open_shell(&tunnel_name);
         match result {
