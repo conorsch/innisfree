@@ -61,3 +61,4 @@
 * [x] Use std::net::IpAddr
 * [x] Use std::net::SocketAddr
 * [x] Support multiple tunnels on same host
+* [x] Make default name simply "innisfree", not "innisfree-innisfree"

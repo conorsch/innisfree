@@ -67,6 +67,9 @@ pub fn clean_config_dir(service_name: &str) {
 /// Adds a prefix "innisfree-" if it does not exist.
 pub fn clean_name(name: &str) -> String {
     let mut orig = String::from(name);
+    if orig == "innisfree" {
+        return orig;
+    }
     orig = orig.replace("-innisfree", "");
     orig = orig.replace("innisfree-", "");
     let mut result = String::from("innisfree-");
@@ -125,5 +128,9 @@ mod tests {
         let s_complex = "foo-innisfree";
         let r_complex = clean_name(s_complex);
         assert!(r_complex == *"innisfree-foo");
+
+        let s_default = "innisfree";
+        let r_default = clean_name(s_default);
+        assert!(r_default == *"innisfree");
     }
 }

@@ -3,6 +3,7 @@
 ## 0.2.10
 
 * Support multiple tunnels on same host
+* Bugfix: default server name is `innisfree` again, (was briefly `innisfree-innisfree`)
 * Dev only: more explicit typing for IP addresses throughout
 
 ## 0.2.9
