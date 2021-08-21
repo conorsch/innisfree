@@ -3,20 +3,16 @@ use std::net::IpAddr;
 use std::process::{Command, Stdio};
 use std::str;
 
-use crate::config::{make_config_dir, InnisfreeError, ServicePort};
+use crate::config::{make_config_dir, ServicePort};
+use crate::error::InnisfreeError;
+use crate::net::generate_unused_subnet;
 
 extern crate tera;
 
 extern crate serde;
 use serde::Serialize;
 
-extern crate ipgen;
-
 const WIREGUARD_LISTEN_PORT: i32 = 51820;
-// Cutting corners here. IP addresses should be customizable,
-// but we'll default to a /28, and generate deterministically
-// within that range based on service name.
-pub const WIREGUARD_SUBNET: &str = "10.50.0.1/28";
 
 #[derive(Debug, Serialize, Clone)]
 pub struct WireguardKeypair {
@@ -106,11 +102,11 @@ pub struct WireguardManager {
 
 impl WireguardManager {
     pub fn new(service_name: &str) -> Result<WireguardManager, InnisfreeError> {
-        let wg_network = WIREGUARD_SUBNET.parse()?;
-        let mut local_name = String::from(service_name);
-        local_name.push_str("-local");
-        let wg_local_ip = ipgen::ip(&local_name, wg_network)?;
-        let wg_local_name = "innisfree_local".to_string();
+        let wg_subnet = generate_unused_subnet()?;
+        let s = wg_subnet.hosts().collect::<Vec<IpAddr>>();
+
+        let wg_local_ip = s[0];
+        let wg_local_name = format!("innisfree-{}-local", service_name);
         let wg_local_keypair = WireguardKeypair::new()?;
         let wg_local_host = WireguardHost {
             name: wg_local_name.to_owned(),
@@ -120,10 +116,8 @@ impl WireguardManager {
             keypair: wg_local_keypair,
         };
 
-        let mut remote_name = String::from(service_name);
-        remote_name.push_str("-remote");
-        let wg_remote_ip = ipgen::ip(&remote_name, wg_network)?;
-        let wg_remote_name = "innisfree_remote".to_string();
+        let wg_remote_ip = s[1];
+        let wg_remote_name = format!("innisfree-{}-remote", service_name);
         let wg_remote_keypair = WireguardKeypair::new()?;
         let wg_remote_host = WireguardHost {
             name: wg_remote_name.to_owned(),
@@ -328,5 +322,17 @@ mod tests {
         assert!(!kp.public.contains(r"&#x2F"));
         assert!(!kp.private.contains("&#x2F"));
         assert!(!kp.private.contains(r"&#x2F"));
+    }
+
+    #[test]
+    fn create_manager() {
+        // We'll assume the test host has no tunnels. The first
+        // tunnel configured should be 10.50.0.1/30, assuming those
+        // IP addrs are available on the system.
+        let mgr = WireguardManager::new("foo-service").unwrap();
+        let local_ip: IpAddr = "10.50.0.1".parse().unwrap();
+        assert!(mgr.wg_local_ip == local_ip);
+        let remote_ip: IpAddr = "10.50.0.2".parse().unwrap();
+        assert!(mgr.wg_remote_ip == remote_ip);
     }
 }

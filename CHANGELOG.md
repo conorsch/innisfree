@@ -1,5 +1,11 @@
 # Innisfree changelog
 
+## 0.2.11
+
+* Ensure Wireguard subnets are /30
+* Bugfix: clean config dirs on destroy
+* Bugfix: ssh command handles --name flag
+
 ## 0.2.10
 
 * Support multiple tunnels on same host

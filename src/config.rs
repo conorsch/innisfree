@@ -1,7 +1,4 @@
-extern crate custom_error;
 extern crate home;
-extern crate ipgen;
-use custom_error::custom_error;
 
 use serde::Serialize;
 
@@ -76,21 +73,6 @@ pub fn clean_name(name: &str) -> String {
     let mut result = String::from("innisfree-");
     result.push_str(&orig);
     result
-}
-
-// Using custom_error mostly for read/write errors
-// Note the use of braces rather than parentheses.
-custom_error! {pub InnisfreeError
-    Io{source: std::io::Error} = "input/output error",
-    // CommandFailure{source: std::process::ExitStatus} = "command failed",
-    SshCommandFailure = "SSH command failed",
-    ServerNotFound = "Server does not exist",
-    CommandFailure{msg: String} = "Local command failed: {}",
-    NetworkError{source: reqwest::Error} = "Network error, check connection",
-    PlatformError = "Platform error, only Linux is supported",
-    Template{source: tera::Error} = "Template generation failed",
-    IpGenError{source: ipgen::Error} = "Failed to generate IP address",
-    Unknown = "unknown error",
 }
 
 #[cfg(test)]

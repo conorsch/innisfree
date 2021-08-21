@@ -2,7 +2,7 @@
 [Interface]
 # Interface: {{ wg.interface.name }}
 PrivateKey = {{ wg.interface.keypair.private }}
-# Hardcode /30 subnet, for two hosts
+# We use a /30 to ensure only adajacent pairs of IPs are used.
 Address = {{ wg.interface.address }}/30
 #DNS = 1.1.1.1, 1.0.0.1
 {% if wg.interface.listenport -%}

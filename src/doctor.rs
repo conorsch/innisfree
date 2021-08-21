@@ -1,4 +1,4 @@
-use crate::config::InnisfreeError;
+use crate::error::InnisfreeError;
 
 const OS_RELEASE: &str = "/etc/os-release";
 

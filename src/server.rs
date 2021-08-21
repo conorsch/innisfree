@@ -17,7 +17,8 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::cloudinit::generate_user_data;
-use crate::config::{InnisfreeError, ServicePort};
+use crate::config::ServicePort;
+use crate::error::InnisfreeError;
 use crate::floating_ip::FloatingIp;
 use crate::ssh::SshKeypair;
 use crate::wg::WireguardManager;

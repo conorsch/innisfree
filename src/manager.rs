@@ -1,4 +1,5 @@
-use crate::config::{clean_config_dir, make_config_dir, InnisfreeError, ServicePort};
+use crate::config::{clean_config_dir, make_config_dir, ServicePort};
+use crate::error::InnisfreeError;
 use crate::proxy::proxy_handler;
 use crate::server::InnisfreeServer;
 use crate::wg::WireguardManager;

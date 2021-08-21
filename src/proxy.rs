@@ -1,4 +1,4 @@
-use crate::config::InnisfreeError;
+use crate::error::InnisfreeError;
 use futures::FutureExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;

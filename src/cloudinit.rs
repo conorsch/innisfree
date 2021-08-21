@@ -5,7 +5,8 @@ use std::net::IpAddr;
 extern crate serde;
 use serde::{Deserialize, Serialize};
 
-use crate::config::{InnisfreeError, ServicePort};
+use crate::config::ServicePort;
+use crate::error::InnisfreeError;
 use crate::ssh::SshKeypair;
 use crate::wg::WireguardManager;
 

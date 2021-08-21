@@ -7,7 +7,8 @@ use std::io::Write;
 
 extern crate tempfile;
 
-use crate::config::{make_config_dir, InnisfreeError};
+use crate::config::make_config_dir;
+use crate::error::InnisfreeError;
 
 #[derive(Debug)]
 pub struct SshKeypair {

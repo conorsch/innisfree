@@ -1,6 +1,6 @@
 [package]
 name = "innisfree"
-version = "0.2.11-alpha.0"
+version = "0.2.11-beta.2"
 authors = ["Conor Schaefer <conor@ruin.dev>"]
 edition = "2018"
 description = "Exposes local services on public IPv4 address, via cloud server."
@@ -17,8 +17,9 @@ custom_error = "~1.9"
 env_logger = "~0.9"
 futures = "0.3"
 home = "~0.5"
-ipgen = "~1"
+ipnet = "~2"
 log = "~0.4"
+pnet = "~0.28"
 rand = "~0.8"
 reqwest = { version = "~0.11", features = ["json", "rustls"] }
 serde = { version = "1.0", features = ["derive"] }
