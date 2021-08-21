@@ -63,5 +63,6 @@
 * [x] Use std::net::SocketAddr
 * [x] Support multiple tunnels on same host
 * [x] Make default name simply "innisfree", not "innisfree-innisfree"
+* [x] Clean up service config dirs
 * [ ] Add all SSH keys on DO account by default
 * [x] Update cli output for ssh to recommend name flag

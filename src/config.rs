@@ -57,10 +57,11 @@ pub fn make_config_dir(service_name: &str) -> String {
 
 pub fn clean_config_dir(service_name: &str) {
     let config_dir = make_config_dir(service_name);
-    for f in std::fs::read_dir(config_dir).unwrap() {
+    for f in std::fs::read_dir(&config_dir).unwrap() {
         let f = f.unwrap();
         std::fs::remove_file(f.path()).unwrap();
     }
+    std::fs::remove_dir(config_dir).unwrap();
 }
 
 /// Provides a human-readable name for the service.

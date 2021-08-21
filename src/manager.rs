@@ -243,6 +243,7 @@ impl InnisfreeManager {
         // Ignore errors, since we want to try all handlers
         let _ = self.bring_down_local_wg();
         let _ = self.server.destroy().await;
+        clean_config_dir(&self.name);
     }
     pub async fn assign_floating_ip(&self, floating_ip: &str) {
         self.server.assign_floating_ip(floating_ip).await;
