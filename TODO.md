@@ -54,7 +54,7 @@
 * [ ] Support SIGTERM and SIGKILL signals
 * [x] Make 'release' builds reproducible
 * [ ] Make deb package builds reproducible
-* [ ] Build target musl for static binaries
+* [x] Build target musl for static binaries
 * [x] Use a build.rs file for setting remap on rustcflags https://doc.rust-lang.org/cargo/reference/build-scripts.html
       Turns out maybe this isn't possible: RUSTFLAGS must be set above the cargo context in which build.rs runs.
       So, settling on a .env file for now to set RUSTFLAGS for reproducible builds.
