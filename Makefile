@@ -37,7 +37,7 @@ deb:
 
 .PHONY: install-deps
 install-deps:
-	sudo apt install -y libssl-dev libcap2-bin lld
+	sudo apt install -y musl-tools libcap2-bin lld
 	cargo deb --version || cargo install cargo-deb
 
 .PHONY: ci
