@@ -2,4 +2,13 @@
 set -euo pipefail
 
 
-cargo release --sign $@
+# Perform release
+cargo release --execute --sign $@
+
+# After successful release, check out release tag and build deb.
+git checkout "$(git tag | sort -V | tail -n1)"
+cargo deb
+# Prepare changelog
+sed -n "$(grep -P '^##' -m2  CHANGELOG.md | xargs -d '\n' printf '/%s/,/%s/p')" CHANGELOG.md  | head -n -2
+echo "Deb ready at:"
+find target/debian/ -type f
