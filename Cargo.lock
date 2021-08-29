@@ -592,7 +592,7 @@ dependencies = [
 
 [[package]]
 name = "innisfree"
-version = "0.2.11"
+version = "0.2.12-alpha.0"
 dependencies = [
  "clap",
  "custom_error",
