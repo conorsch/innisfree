@@ -4,6 +4,7 @@
 
 * Statically links all library dependencies
 * Update all dependencies to latest
+* Dev only: update release tooling
 
 ## 0.2.11
 
