@@ -1,5 +1,10 @@
 # Innisfree changelog
 
+## 0.2.12
+
+* Statically links all library dependencies
+* Update all dependencies to latest
+
 ## 0.2.11
 
 * Ensure Wireguard subnets are /30
