@@ -1,6 +1,7 @@
 // Logic to assign a pre-existing Floating IP resource in DigitalOcean
 // to the Droplet used for managing the tunnel. Allows for DNS records
 // to remain unchanged, but the tunnel to be rebuilt ad-hoc.
+use crate::error::InnisfreeError;
 use serde_json::json;
 use std::env;
 use std::net::IpAddr;
@@ -13,7 +14,7 @@ pub struct FloatingIp {
 }
 
 impl FloatingIp {
-    pub async fn assign(&self) {
+    pub async fn assign(&self) -> Result<(), InnisfreeError> {
         let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
         let req_body = json!({
             "type": "assign",
@@ -32,9 +33,11 @@ impl FloatingIp {
         match response {
             Ok(_) => {
                 debug!("Assigning floating IP to droplet...");
+                Ok(())
             }
             Err(e) => {
                 error!("Failed to assign floating IP: {}", e);
+                Err(InnisfreeError::NetworkError { source: e })
             }
         }
     }

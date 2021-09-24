@@ -16,10 +16,14 @@ extern crate serde_yaml;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::cloudinit::generate_user_data;
+mod cloudinit;
+mod floating_ip;
+mod ssh_key;
+use self::cloudinit::generate_user_data;
+use self::floating_ip::FloatingIp;
+use self::ssh_key::DigitalOceanSshKey;
 use crate::config::ServicePort;
 use crate::error::InnisfreeError;
-use crate::floating_ip::FloatingIp;
 use crate::ssh::SshKeypair;
 use crate::wg::WireguardManager;
 
@@ -52,7 +56,7 @@ impl InnisfreeServer {
         let ssh_server_keypair = SshKeypair::new("server")?;
         let user_data =
             generate_user_data(&ssh_client_keypair, &ssh_server_keypair, &wg_mgr, &services)?;
-        let droplet = Droplet::new(name, &user_data).await?;
+        let droplet = Droplet::new(name, &user_data, ssh_client_keypair.public.to_owned()).await?;
         Ok(InnisfreeServer {
             services,
             ssh_client_keypair,
@@ -66,13 +70,13 @@ impl InnisfreeServer {
         let droplet = &self.droplet;
         droplet.ipv4_address()
     }
-    pub async fn assign_floating_ip(&self, floating_ip: &str) {
+    pub async fn assign_floating_ip(&self, floating_ip: &str) -> Result<(), InnisfreeError> {
         let fip: IpAddr = floating_ip.parse().unwrap();
         let f = FloatingIp {
             ip: fip,
             droplet_id: self.droplet.id,
         };
-        f.assign().await;
+        f.assign().await
     }
     pub async fn destroy(&self) -> Result<(), InnisfreeError> {
         // Destroys backing droplet
@@ -87,18 +91,27 @@ struct Droplet {
     name: String,
     status: String,
     networks: HashMap<String, Vec<HashMap<String, String>>>,
+    // The API takes a list, but we only care about 1 key,
+    // the generated one, so use that.
+    ssh_pubkey: Option<DigitalOceanSshKey>,
 }
 
 impl Droplet {
-    async fn new(name: &str, user_data: &str) -> Result<Droplet, InnisfreeError> {
+    async fn new(
+        name: &str,
+        user_data: &str,
+        public_key: String,
+    ) -> Result<Droplet, InnisfreeError> {
         debug!("Creating new DigitalOcean Droplet");
         // Build JSON request body, for sending to DigitalOcean API
+        let do_ssh_key = DigitalOceanSshKey::new(name.to_owned(), public_key).await?;
         let droplet_body = json!({
             "image": DO_IMAGE,
             "name": name,
             "region": DO_REGION,
             "size": DO_SIZE,
             "user_data": user_data,
+            "ssh_keys": vec![do_ssh_key.id],
         });
 
         // The API logic could be abstracted further, in a DigitalOcean Manager.
@@ -112,11 +125,15 @@ impl Droplet {
             .json(&droplet_body)
             .bearer_auth(api_key)
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
         let j: serde_json::Value = response.json().await?;
         let d: String = j["droplet"].to_string();
-        let droplet: Droplet = serde_json::from_str(&d).unwrap();
+        let mut droplet: Droplet = serde_json::from_str(&d).unwrap();
+        // Add SSH key info after creation, since JSON response won't include it,
+        // even though JSON request did. We'll need it to clean up in `self.destroy`.
+        droplet.ssh_pubkey = Some(do_ssh_key);
         debug!("Server created, waiting for networking");
         Ok(droplet.wait_for_boot().await?)
     }
@@ -157,7 +174,16 @@ impl Droplet {
         ip
     }
     pub async fn destroy(&self) -> Result<(), InnisfreeError> {
-        Ok(destroy_droplet(self).await?)
+        match &self.ssh_pubkey {
+            Some(k) => {
+                k.destroy().await?;
+            }
+            None => {
+                warn!("No API pubkey associated with droplet, not destroying");
+            }
+        }
+        destroy_droplet(self).await?;
+        Ok(())
     }
 }
 
@@ -168,10 +194,16 @@ async fn get_droplet(droplet: &Droplet) -> Result<Droplet, InnisfreeError> {
     let request_url = DO_API_BASE_URL.to_owned() + "/" + &droplet.id.to_string();
 
     let client = reqwest::Client::new();
-    let response = client.get(request_url).bearer_auth(api_key).send().await?;
+    let response = client
+        .get(request_url)
+        .bearer_auth(api_key)
+        .send()
+        .await?
+        .error_for_status()?;
     let j: serde_json::Value = response.json().await?;
     let d_s: String = j["droplet"].to_string();
-    let d = serde_json::from_str(&d_s).unwrap();
+    let mut d: Droplet = serde_json::from_str(&d_s).unwrap();
+    d.ssh_pubkey = droplet.ssh_pubkey.clone();
     Ok(d)
 }
 
@@ -181,7 +213,12 @@ async fn destroy_droplet(droplet: &Droplet) -> Result<(), InnisfreeError> {
     let request_url = DO_API_BASE_URL.to_owned() + "/" + &droplet.id.to_string();
 
     let client = reqwest::Client::new();
-    let response = client.delete(request_url).bearer_auth(api_key).send().await;
+    let response = client
+        .delete(request_url)
+        .bearer_auth(api_key)
+        .send()
+        .await?
+        .error_for_status();
     match response {
         Ok(_r) => {
             debug!("Droplet destroyed");

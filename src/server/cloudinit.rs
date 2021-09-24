@@ -43,7 +43,7 @@ pub fn generate_user_data(
     wg_mgr: &WireguardManager,
     services: &[ServicePort],
 ) -> Result<String, InnisfreeError> {
-    let user_data = include_str!("../files/cloudinit.cfg");
+    let user_data = include_str!("../../files/cloudinit.cfg");
     let user_data = user_data.to_string();
 
     let mut cloud_config = serde_yaml::from_str::<CloudConfig>(&user_data).unwrap();
@@ -85,7 +85,7 @@ pub fn generate_user_data(
 }
 
 fn nginx_streams(services: &[ServicePort], dest_ip: IpAddr) -> Result<String, InnisfreeError> {
-    let nginx_config = include_str!("../files/stream.conf.j2");
+    let nginx_config = include_str!("../../files/stream.conf.j2");
     let mut context = tera::Context::new();
     context.insert("services", services);
     context.insert("dest_ip", &dest_ip.to_string());

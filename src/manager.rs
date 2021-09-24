@@ -246,8 +246,8 @@ impl InnisfreeManager {
         let _ = self.server.destroy().await;
         clean_config_dir(&self.name);
     }
-    pub async fn assign_floating_ip(&self, floating_ip: &str) {
-        self.server.assign_floating_ip(floating_ip).await;
+    pub async fn assign_floating_ip(&self, floating_ip: &str) -> Result<(), InnisfreeError> {
+        self.server.assign_floating_ip(floating_ip).await
     }
 }
 

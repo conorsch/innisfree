@@ -10,11 +10,9 @@ extern crate log;
 use env_logger::Env;
 
 // Innisfree imports
-mod cloudinit;
 mod config;
 mod doctor;
 mod error;
-mod floating_ip;
 mod manager;
 mod net;
 mod proxy;
@@ -163,7 +161,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Really need a better default case for floating-ip
         if floating_ip != "None" {
             debug!("Configuring floating IP...");
-            mgr.assign_floating_ip(floating_ip).await;
+            mgr.assign_floating_ip(floating_ip).await?;
             info!("Server ready! IPv4 address: {}", floating_ip);
         } else {
             let ip = &mgr.server.ipv4_address();

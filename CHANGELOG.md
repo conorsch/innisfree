@@ -1,5 +1,13 @@
 # Innisfree changelog
 
+## 0.2.14
+
+* Post ephemeral SSH key to DO account (avoids new instance emails)
+
+## 0.2.13
+
+* [mistaken release, same as 0.2.12]
+
 ## 0.2.12
 
 * Statically links all library dependencies
