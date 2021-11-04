@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::ServicePort;
 use crate::error::InnisfreeError;
+use crate::server::ssh_key::get_all_keys;
 use crate::ssh::SshKeypair;
 use crate::wg::WireguardManager;
 
@@ -37,7 +38,7 @@ pub struct CloudConfigUser {
     ssh_authorized_keys: Vec<String>,
 }
 
-pub fn generate_user_data(
+pub async fn generate_user_data(
     ssh_client_keypair: &SshKeypair,
     ssh_server_keypair: &SshKeypair,
     wg_mgr: &WireguardManager,
@@ -73,7 +74,11 @@ pub fn generate_user_data(
     };
     cloud_config.write_files.push(nginx);
 
-    cloud_config.users[0].ssh_authorized_keys = vec![ssh_client_keypair.public.to_string()];
+    let acct_auth_keys = get_all_keys().await?;
+    cloud_config.users[0].ssh_authorized_keys = vec![
+        ssh_client_keypair.public.to_string(),
+        acct_auth_keys[0].public_key.to_owned(),
+    ];
 
     let cc_rendered: String = serde_yaml::to_string(&cloud_config).unwrap();
     let cc_rendered_no_header = &cc_rendered.as_bytes()[4..];
@@ -126,13 +131,15 @@ mod tests {
         wg_hosts
     }
 
-    #[test]
-    fn cloudconfig_has_header() {
+    #[tokio::test]
+    async fn cloudconfig_has_header() {
         let kp1 = SshKeypair::new("server-test1").unwrap();
         let kp2 = SshKeypair::new("server-test2").unwrap();
         let wg_mgr = WireguardManager::new("foo-test").unwrap();
         let ports = vec![];
-        let user_data = generate_user_data(&kp1, &kp2, &wg_mgr, &ports).unwrap();
+        let user_data = generate_user_data(&kp1, &kp2, &wg_mgr, &ports)
+            .await
+            .unwrap();
         assert!(user_data.ends_with(""));
         assert!(user_data.starts_with("#cloud-config"));
         assert!(user_data.starts_with("#cloud-config\n"));

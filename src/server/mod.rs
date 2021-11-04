@@ -55,7 +55,8 @@ impl InnisfreeServer {
         let ssh_client_keypair = SshKeypair::new("client")?;
         let ssh_server_keypair = SshKeypair::new("server")?;
         let user_data =
-            generate_user_data(&ssh_client_keypair, &ssh_server_keypair, &wg_mgr, &services)?;
+            generate_user_data(&ssh_client_keypair, &ssh_server_keypair, &wg_mgr, &services)
+                .await?;
         let droplet = Droplet::new(name, &user_data, ssh_client_keypair.public.to_owned()).await?;
         Ok(InnisfreeServer {
             services,

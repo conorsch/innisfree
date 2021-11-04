@@ -14,5 +14,6 @@ custom_error! {pub InnisfreeError
     Template{source: tera::Error} = "Template generation failed",
     IpNetAssignment{source: ipnet::AddrParseError} = "Failed to find unclaimed IP address",
     IpAddrAssignment{source: std::net::AddrParseError} = "Failed to find unclaimed IP address",
+    ApiError{source: serde_json::Error} = "Could not parse JSON from API response",
     Unknown = "unknown error",
 }

@@ -28,6 +28,7 @@
 * [x] Port deb pkg logic for rust
 * [x] Pare down Cargo.toml proxy code
 
+## Housekeeping
 * [x] SSH should use tmpfiles, not clobber primary dir
 * [ ] Package upgrade should be async
 * [x] Configure unattended-upgrades
@@ -43,6 +44,7 @@
 * [x] Wire up floating ip
 * [x] Wg command should fail
 
+## Dev QOL
 * [x] Support local ip service forwarding (i.e. no-proxy)
 * [x] Add iptables rules to wg to block all but authorized
 * [x] Make ip command fail if server doesnt exit
@@ -65,7 +67,9 @@
 * [x] Make IP address pairs adjacent /30
 * [x] Make default name simply "innisfree", not "innisfree-innisfree"
 * [x] Clean up service config dirs
+* [x] Use ephemeral SSH keypair for user
 * [x] Add all SSH keys on DO account by default
 * [x] Update cli output for ssh to recommend name flag
 * [ ] Make IP address pairs deterministic (via ipgen)
 * [ ] Create wg interfaces early
+* [ ] Switch from Ubuntu LTS to Debian Stable (the freest OS <3)

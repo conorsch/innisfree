@@ -17,6 +17,23 @@ pub struct DigitalOceanSshKey {
     pub id: u32,
 }
 
+pub async fn get_all_keys() -> Result<Vec<DigitalOceanSshKey>, InnisfreeError> {
+    let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
+    let request_url = DO_API_BASE_URL.to_owned() + "/account/keys";
+    let client = reqwest::Client::new();
+    debug!("Fetching SSH account public keys");
+    let response = client
+        .get(request_url)
+        .bearer_auth(api_key)
+        .send()
+        .await?
+        .error_for_status()?;
+    let j: serde_json::Value = response.json().await?;
+    let k: String = j["ssh_keys"].to_string();
+    let ssh_keys: Vec<DigitalOceanSshKey> = serde_json::from_str(&k)?;
+    Ok(ssh_keys)
+}
+
 impl DigitalOceanSshKey {
     pub async fn new(
         name: String,
@@ -41,11 +58,9 @@ impl DigitalOceanSshKey {
         debug!("Syncing SSH keypair to DigitalOcean...");
         let j: serde_json::Value = response.json().await?;
         let k: String = j["ssh_key"].to_string();
-        let do_ssh_key: DigitalOceanSshKey = serde_json::from_str(&k).unwrap();
+        let do_ssh_key: DigitalOceanSshKey = serde_json::from_str(&k)?;
         Ok(do_ssh_key)
     }
-    // Tested, but oddly is not working. No error is reported,
-    // but the key remains
     pub async fn destroy(&self) -> Result<(), InnisfreeError> {
         let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
         let request_url = DO_API_BASE_URL.to_owned() + "/account/keys/" + &self.id.to_string();

@@ -1,5 +1,10 @@
 # Innisfree changelog
 
+## 0.2.15
+
+* Add all pre-existing SSH pubkeys from DO account to server
+  (enables log-in from other tooling)
+
 ## 0.2.14
 
 * Post ephemeral SSH key to DO account (avoids new instance emails)
