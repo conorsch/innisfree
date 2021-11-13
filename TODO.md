@@ -75,4 +75,4 @@
 * [x] Update cli output for ssh to recommend name flag
 * [ ] Make IP address pairs deterministic (via ipgen)
 * [ ] Create wg interfaces early
-* [ ] Switch from Ubuntu LTS to Debian Stable (the freest OS <3)
+* [x] Switch from Ubuntu LTS to Debian Stable (the freest OS <3)

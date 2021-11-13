@@ -29,7 +29,7 @@ use crate::wg::WireguardManager;
 
 const DO_REGION: &str = "sfo2";
 const DO_SIZE: &str = "s-1vcpu-1gb";
-const DO_IMAGE: &str = "ubuntu-20-04-x64";
+const DO_IMAGE: &str = "debian-11-x64";
 const DO_API_BASE_URL: &str = "https://api.digitalocean.com/v2/droplets";
 
 // Manager class, wraps a cloudserver VM type, such as Droplet,

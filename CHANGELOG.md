@@ -1,7 +1,8 @@
 # Innisfree changelog
 
-## 0.2.16 (in progress)
+## 0.2.16
 
+* Use Debian Stable (11 Bullseye), rather than Ubuntu LTS, for cloud image
 * Bugfix: add all API pubkeys, not just the first
 * Dev only: don't error out on tests if no API key is present
 * Dev only: prune unused fields from structs (thanks, clippy!)

@@ -48,14 +48,19 @@ pub fn distro_support() -> Result<bool, InnisfreeError> {
             "Debian Stable Buster 10 doesn't ship wireguard by default, but it's available
               in buster-backports. See for details: https://www.wireguard.com/install/"
         );
+    } else if os_release.contains("ID=debian") && os_release.contains("VERSION_CODENAME=bullseye") {
+        info!(
+            "Debian Stable Bullseye 11 supports Wireguard out of the box. \
+              Run 'apt-get install wireguard wireguard-tools'."
+        );
     } else if os_release.contains("ID=ubuntu") && os_release.contains("VERSION_CODENAME=focal") {
         info!(
             "Ubuntu Focal 20.04 supports Wireguard out of the box. \
               Run 'apt-get install wireguard wireguard-tools'."
         );
-    } else if os_release.contains("ID=fedora") && os_release.contains("VERSION_CODENAME=33") {
+    } else if os_release.contains("ID=fedora") && os_release.contains("VERSION_CODENAME=34") {
         info!(
-            "Fedora 33 supports Wireguard out of the box. \
+            "Fedora 34 supports Wireguard out of the box. \
               Run 'dnf install wireguard wireguard-tools'."
         );
     } else {

@@ -18,12 +18,27 @@ netstat -lnp | grep -iF "$local_port" | perl -lanE 'say $F[-1]' | grep -oP '^\d+
     | xargs -d '\n' -r kill
 
 dst_dir="$(mktemp -d)"
-echo "Hello, world!" > "${dst_dir}/index.html"
+test_string="Hello, world! $(uuid)"
+echo "$test_string" > "${dst_dir}/index.html"
+trap 'rm -rf "$dst_dir"' EXIT
 
 cargo build
-cargo run -- up -p "$local_port"
+cargo run -- up -p "$local_port" &
+
+# wait for server to come up
+sleep 90s
+
 python3 -m http.server --directory "$dst_dir" "$local_port" &
 sleep 1
 curl "http://localhost:${local_port}" || true
-curl --connect-timeout 3 --max-time 5 "http://$(cargo run -- ip):${local_port}"
-wait
+result_string="$(curl -s --connect-timeout 3 --max-time 5 "http://$(cargo run -- ip):${local_port}")"
+if [[ "$test_string" != "$result_string" ]] ; then
+    echo "ERROR: Failed to find test string: '$test_string'" >&2
+    exit 1
+else
+    echo "SUCCESS: Found test string: '$test_string'" >&2
+    echo "Cleaning up..." >&2
+    # use SIGINT to kill because I haven't figured out how to catch other signals
+    jobs -p | xargs -r kill -s SIGINT
+    exit 0
+fi
