@@ -90,13 +90,13 @@ impl WireguardDevice {
 #[derive(Debug, Clone)]
 pub struct WireguardManager {
     pub wg_local_ip: IpAddr,
-    wg_local_name: String,
-    wg_local_host: WireguardHost,
+    // wg_local_name: String,
+    // wg_local_host: WireguardHost,
     pub wg_local_device: WireguardDevice,
 
     pub wg_remote_ip: IpAddr,
-    wg_remote_name: String,
-    wg_remote_host: WireguardHost,
+    // wg_remote_name: String,
+    // wg_remote_host: WireguardHost,
     pub wg_remote_device: WireguardDevice,
 }
 
@@ -128,25 +128,25 @@ impl WireguardManager {
         };
 
         let wg_local_device = WireguardDevice {
-            name: wg_local_name.to_owned(),
+            name: wg_local_name,
             interface: wg_local_host.clone(),
             peer: wg_remote_host.clone(),
         };
         let wg_remote_device = WireguardDevice {
-            name: wg_remote_name.to_owned(),
-            interface: wg_remote_host.clone(),
-            peer: wg_local_host.clone(),
+            name: wg_remote_name,
+            interface: wg_remote_host,
+            peer: wg_local_host,
         };
 
         Ok(WireguardManager {
             wg_local_ip,
-            wg_local_name,
-            wg_local_host,
+            // wg_local_name,
+            // wg_local_host,
             wg_local_device,
 
             wg_remote_ip,
-            wg_remote_name,
-            wg_remote_host,
+            // wg_remote_name,
+            // wg_remote_host,
             wg_remote_device,
         })
     }

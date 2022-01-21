@@ -15,5 +15,6 @@ custom_error! {pub InnisfreeError
     IpNetAssignment{source: ipnet::AddrParseError} = "Failed to find unclaimed IP address",
     IpAddrAssignment{source: std::net::AddrParseError} = "Failed to find unclaimed IP address",
     ApiError{source: serde_json::Error} = "Could not parse JSON from API response",
+    ConfigError{source: std::env::VarError} = "DigitalOcean API token not set",
     Unknown = "unknown error",
 }

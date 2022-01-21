@@ -40,9 +40,9 @@ pub struct InnisfreeServer {
     pub services: Vec<ServicePort>,
     pub ssh_client_keypair: SshKeypair,
     pub ssh_server_keypair: SshKeypair,
-    wg_mgr: WireguardManager,
+    // wg_mgr: WireguardManager,
     droplet: Droplet,
-    name: String,
+    // name: String,
 }
 
 impl InnisfreeServer {
@@ -62,9 +62,9 @@ impl InnisfreeServer {
             services,
             ssh_client_keypair,
             ssh_server_keypair,
-            wg_mgr,
+            // wg_mgr,
             droplet,
-            name: name.to_string(),
+            // name: name.to_string(),
         })
     }
     pub fn ipv4_address(&self) -> IpAddr {
@@ -89,7 +89,7 @@ impl InnisfreeServer {
 #[derive(Debug, Deserialize)]
 struct Droplet {
     id: u32,
-    name: String,
+    // name: String,
     status: String,
     networks: HashMap<String, Vec<HashMap<String, String>>>,
     // The API takes a list, but we only care about 1 key,

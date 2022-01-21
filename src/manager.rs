@@ -10,8 +10,7 @@ use tokio::signal;
 #[derive(Debug)]
 pub struct InnisfreeManager {
     pub services: Vec<ServicePort>,
-    dest_ip: IpAddr,
-    floating_ip: Option<String>,
+    // dest_ip: IpAddr,
     pub server: InnisfreeServer,
     pub name: String,
     pub wg: WireguardManager,
@@ -28,8 +27,7 @@ impl InnisfreeManager {
         Ok(InnisfreeManager {
             name: tunnel_name.to_owned(),
             services: server.services.to_vec(),
-            dest_ip: "127.0.0.1".parse().unwrap(),
-            floating_ip: None,
+            // dest_ip: "127.0.0.1".parse().unwrap(),
             server,
             wg,
         })

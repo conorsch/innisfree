@@ -43,6 +43,9 @@
 * [x] SSH commands don't seem to report failure
 * [x] Wire up floating ip
 * [x] Wg command should fail
+* [x] Tests should not error without API!
+- [x] SSH pubkey lookup should fail gracefully
+- [x] SSH pubkey lookup should merge all keys, not just the first, from API
 
 ## Dev QOL
 * [x] Support local ip service forwarding (i.e. no-proxy)

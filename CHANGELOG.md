@@ -1,5 +1,11 @@
 # Innisfree changelog
 
+## 0.2.16 (in progress)
+
+* Bugfix: add all API pubkeys, not just the first
+* Dev only: don't error out on tests if no API key is present
+* Dev only: prune unused fields from structs (thanks, clippy!)
+
 ## 0.2.15
 
 * Add all pre-existing SSH pubkeys from DO account to server

@@ -18,7 +18,7 @@ pub struct DigitalOceanSshKey {
 }
 
 pub async fn get_all_keys() -> Result<Vec<DigitalOceanSshKey>, InnisfreeError> {
-    let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
+    let api_key = env::var("DIGITALOCEAN_API_TOKEN")?;
     let request_url = DO_API_BASE_URL.to_owned() + "/account/keys";
     let client = reqwest::Client::new();
     debug!("Fetching SSH account public keys");

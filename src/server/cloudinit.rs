@@ -74,11 +74,22 @@ pub async fn generate_user_data(
     };
     cloud_config.write_files.push(nginx);
 
-    let acct_auth_keys = get_all_keys().await?;
-    cloud_config.users[0].ssh_authorized_keys = vec![
-        ssh_client_keypair.public.to_string(),
-        acct_auth_keys[0].public_key.to_owned(),
-    ];
+    // Build list of pubkeys to add to cloudinit. There may be no keys
+    // returned from the API, e.g. during testing. That's fine,
+    // we'll just use the one we generated.
+    let mut cloud_config_ssh_keys = vec![ssh_client_keypair.public.to_string()];
+    match get_all_keys().await {
+        Ok(r) => {
+            for k in r {
+                cloud_config_ssh_keys.extend(vec![k.public_key.to_owned()]);
+            }
+        }
+        Err(e) => {
+            warn!("No SSH pubkeys found via API: {}", e);
+        }
+    }
+
+    cloud_config.users[0].ssh_authorized_keys = cloud_config_ssh_keys;
 
     let cc_rendered: String = serde_yaml::to_string(&cloud_config).unwrap();
     let cc_rendered_no_header = &cc_rendered.as_bytes()[4..];
