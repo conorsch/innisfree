@@ -22,7 +22,7 @@ impl InnisfreeManager {
         services: Vec<ServicePort>,
     ) -> Result<InnisfreeManager, InnisfreeError> {
         clean_config_dir(tunnel_name);
-        let wg = WireguardManager::new(&tunnel_name.to_owned())?;
+        let wg = WireguardManager::new(tunnel_name)?;
         let server = InnisfreeServer::new(tunnel_name, services, wg.clone()).await?;
         Ok(InnisfreeManager {
             name: tunnel_name.to_owned(),
@@ -56,7 +56,7 @@ impl InnisfreeManager {
     fn wait_for_ssh(&self) {
         let dest_ip = SocketAddr::new(self.server.ipv4_address(), 22);
         loop {
-            let stream = TcpStream::connect(&dest_ip);
+            let stream = TcpStream::connect(dest_ip);
             match stream {
                 Ok(_) => {
                     debug!("SSH port is open, proceeding");
@@ -136,7 +136,7 @@ impl InnisfreeManager {
         trace!("Running local wg-quick cmd");
         let result = std::process::Command::new("wg-quick")
             .arg("up")
-            .arg(&fpath.to_str().unwrap())
+            .arg(fpath.to_str().unwrap())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status();
@@ -193,7 +193,7 @@ impl InnisfreeManager {
 
         let mut fpath = std::path::PathBuf::from(make_config_dir(&self.name));
         fpath.push("known_hosts");
-        std::fs::write(&fpath.to_str().unwrap(), host_line).expect("Failed to create known_hosts");
+        std::fs::write(fpath.to_str().unwrap(), host_line).expect("Failed to create known_hosts");
         return fpath.to_str().unwrap().to_string();
     }
     pub fn run_ssh_cmd(&self, cmd: Vec<&str>) -> Result<(), InnisfreeError> {

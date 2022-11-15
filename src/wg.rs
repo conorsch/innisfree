@@ -157,7 +157,7 @@ fn generate_wireguard_privkey() -> Result<String, InnisfreeError> {
     // Ideally we'd generate these values in pure Rust, but
     // calling out to wg as a first draft.
     let privkey_cmd = std::process::Command::new("wg")
-        .args(&["genkey"])
+        .args(["genkey"])
         .output()?;
     let privkey: String = str::from_utf8(&privkey_cmd.stdout)
         .unwrap()
@@ -169,7 +169,7 @@ fn generate_wireguard_privkey() -> Result<String, InnisfreeError> {
 fn derive_wireguard_pubkey(privkey: &str) -> Result<String, InnisfreeError> {
     // Open a pipe to 'wg genkey', to pass in the privkey
     let pubkey_cmd = Command::new("wg")
-        .args(&["pubkey"])
+        .args(["pubkey"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()?;

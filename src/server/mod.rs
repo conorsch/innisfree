@@ -81,7 +81,7 @@ impl InnisfreeServer {
     }
     pub async fn destroy(&self) -> Result<(), InnisfreeError> {
         // Destroys backing droplet
-        Ok(self.droplet.destroy().await?)
+        self.droplet.destroy().await
     }
 }
 
@@ -136,7 +136,7 @@ impl Droplet {
         // even though JSON request did. We'll need it to clean up in `self.destroy`.
         droplet.ssh_pubkey = Some(do_ssh_key);
         debug!("Server created, waiting for networking");
-        Ok(droplet.wait_for_boot().await?)
+        droplet.wait_for_boot().await
     }
 
     async fn wait_for_boot(&self) -> Result<Droplet, InnisfreeError> {

@@ -1,39 +1,39 @@
 #!/bin/bash
 # For debugging proxy.rs
-#
-set -e
-set -u
-#set -o pipefail
 
+set -euo pipefail
+set -x
 
-# Make sure to clean up afterwards
-trap 'jobs -p | xargs -r kill' EXIT
-
-# cargo build
-
+# Declare TCP port to check over
 local_port="8080"
 
 # Make sure anything that wasn't cleaned up is killed
 netstat -lnp | grep -iF "$local_port" | perl -lanE 'say $F[-1]' | grep -oP '^\d+' \
-    | xargs -d '\n' -r kill
+    | xargs -d '\n' -r kill || true
 
+# Prepare test dir
 dst_dir="$(mktemp -d)"
 test_string="Hello, world! $(uuid)"
 echo "$test_string" > "${dst_dir}/index.html"
-trap 'rm -rf "$dst_dir"' EXIT
 
-cargo build
-cargo run -- up -p "$local_port" &
+# Make sure to clean up afterwards
+trap 'jobs -p | xargs -r kill ; rm -rf "$dst_dir"; reset' EXIT
 
-# wait for server to come up
-sleep 90s
+# Build the latest
+{ cargo run -- up -p "$local_port" & sleep 90s ; } &
+wait
 
+# Host webroot containing test string
 python3 -m http.server --directory "$dst_dir" "$local_port" &
 sleep 1
-curl "http://localhost:${local_port}" || true
+
+# Make sure we find the unique test string,
+# over both localhost (as control) and remote IP.
+curl -I "http://localhost:${local_port}"
 result_string="$(curl -s --connect-timeout 3 --max-time 5 "http://$(cargo run -- ip):${local_port}")"
 if [[ "$test_string" != "$result_string" ]] ; then
     echo "ERROR: Failed to find test string: '$test_string'" >&2
+    jobs -p | xargs -r kill
     exit 1
 else
     echo "SUCCESS: Found test string: '$test_string'" >&2
@@ -42,3 +42,5 @@ else
     jobs -p | xargs -r kill -s SIGINT
     exit 0
 fi
+
+wait

@@ -1,0 +1,2 @@
+integration:
+    cargo test -- --ignored

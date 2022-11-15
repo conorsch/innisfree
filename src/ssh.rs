@@ -78,7 +78,7 @@ fn create_ssh_keypair(prefix: &str) -> Result<SshKeypair, InnisfreeError> {
     }
 
     let status = Command::new("ssh-keygen")
-        .args(&[
+        .args([
             "-t",
             "ed25519",
             "-P",
