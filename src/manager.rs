@@ -1,8 +1,8 @@
 use crate::config::{clean_config_dir, make_config_dir, ServicePort};
-use crate::error::InnisfreeError;
 use crate::proxy::proxy_handler;
 use crate::server::InnisfreeServer;
 use crate::wg::WireguardManager;
+use anyhow::{anyhow, Result};
 use futures::future::join_all;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use tokio::signal;
@@ -17,10 +17,7 @@ pub struct InnisfreeManager {
 }
 
 impl InnisfreeManager {
-    pub async fn new(
-        tunnel_name: &str,
-        services: Vec<ServicePort>,
-    ) -> Result<InnisfreeManager, InnisfreeError> {
+    pub async fn new(tunnel_name: &str, services: Vec<ServicePort>) -> Result<InnisfreeManager> {
         clean_config_dir(tunnel_name);
         let wg = WireguardManager::new(tunnel_name)?;
         let server = InnisfreeServer::new(tunnel_name, services, wg.clone()).await?;
@@ -32,7 +29,7 @@ impl InnisfreeManager {
             wg,
         })
     }
-    pub fn up(&self) -> Result<(), InnisfreeError> {
+    pub fn up(&self) -> Result<()> {
         self.wait_for_ssh();
         debug!("Configuring remote proxy and opening tunnel...");
         self.wait_for_cloudinit()?;
@@ -41,7 +38,7 @@ impl InnisfreeManager {
         let ip = self.server.ipv4_address();
         let mut wg = self.wg.wg_local_device.clone();
         wg.peer.endpoint = Some(ip);
-        wg.write_locally(&self.name, &self.services);
+        wg.write_locally(&self.name, &self.services)?;
         debug!("Bringing up remote Wireguard interface");
         self.bring_up_remote_wg()?;
         debug!("Bringing up local Wireguard interface");
@@ -49,7 +46,7 @@ impl InnisfreeManager {
         trace!("Testing connection");
         self.test_connection()
     }
-    fn wait_for_cloudinit(&self) -> Result<(), InnisfreeError> {
+    fn wait_for_cloudinit(&self) -> Result<()> {
         let cmd: Vec<&str> = vec!["cloud-init", "status", "--long", "--wait"];
         self.run_ssh_cmd(cmd)
     }
@@ -86,7 +83,7 @@ impl InnisfreeManager {
             }
         }
     }
-    fn test_connection(&self) -> Result<(), InnisfreeError> {
+    fn test_connection(&self) -> Result<()> {
         trace!("Inside test connection, setting up vars");
         let ip = &self.wg.wg_remote_ip;
         trace!("Inside test connection, running ping cmd");
@@ -104,28 +101,28 @@ impl InnisfreeManager {
                     debug!("Confirmed tunnel is established, able to ping across it");
                     Ok(())
                 } else {
-                    Err(InnisfreeError::CommandFailure {
-                        msg: "Failed to ping remote Wireguard interface, tunnel broken".to_string(),
-                    })
+                    Err(anyhow!(
+                        "Failed to ping remote Wireguard interface, tunnel broken"
+                    ))
                 }
             }
             Err(_) => {
                 trace!("Inside test connection match, OK, failure");
-                Err(InnisfreeError::CommandFailure {
-                    msg: "Failed to ping remote Wireguard interface, tunnel broken".to_string(),
-                })
+                Err(anyhow!(
+                    "Failed to ping remote Wireguard interface, tunnel broken"
+                ))
             }
         }
     }
-    pub fn config_dir(&self) -> Result<String, InnisfreeError> {
+    pub fn config_dir(&self) -> Result<String> {
         Ok(make_config_dir(&self.name))
     }
-    pub fn bring_up_remote_wg(&self) -> Result<(), InnisfreeError> {
+    pub fn bring_up_remote_wg(&self) -> Result<()> {
         let cmd = vec!["wg-quick", "up", "/tmp/innisfree.conf"];
         trace!("Activating remote wg interface");
         self.run_ssh_cmd(cmd)
     }
-    pub fn bring_up_local_wg(&self) -> Result<(), InnisfreeError> {
+    pub fn bring_up_local_wg(&self) -> Result<()> {
         trace!("Bringing up local wg conn");
         // Bring down in case the config was running with a different host
         let _down = self.bring_down_local_wg();
@@ -149,17 +146,13 @@ impl InnisfreeManager {
                     Ok(())
                 } else {
                     trace!("Inspecting wg-quick results: inside OK, inside failure");
-                    Err(InnisfreeError::CommandFailure {
-                        msg: "Failed to bring up local Wireguard interface".to_string(),
-                    })
+                    Err(anyhow!("Failed to bring up local Wireguard interface"))
                 }
             }
-            Err(_) => Err(InnisfreeError::CommandFailure {
-                msg: "Failed to bring up local Wireguard interface".to_string(),
-            }),
+            Err(_) => Err(anyhow!("Failed to bring up local Wireguard interface")),
         }
     }
-    pub fn bring_down_local_wg(&self) -> Result<(), InnisfreeError> {
+    pub fn bring_down_local_wg(&self) -> Result<()> {
         let cmd = "wg-quick";
         let mut fpath = std::path::PathBuf::from(make_config_dir(&self.name));
         fpath.push(format!("{}.conf", &self.name));
@@ -174,14 +167,10 @@ impl InnisfreeManager {
                 if r.success() {
                     Ok(())
                 } else {
-                    Err(InnisfreeError::CommandFailure {
-                        msg: "Failed to remove local Wireguard interface".to_string(),
-                    })
+                    Err(anyhow!("Failed to remove local Wireguard interface"))
                 }
             }
-            Err(_) => Err(InnisfreeError::CommandFailure {
-                msg: "Failed to remove local Wireguard interface".to_string(),
-            }),
+            Err(_) => Err(anyhow!("Failed to remove local Wireguard interface")),
         }
     }
     pub fn known_hosts(&self) -> String {
@@ -196,9 +185,9 @@ impl InnisfreeManager {
         std::fs::write(fpath.to_str().unwrap(), host_line).expect("Failed to create known_hosts");
         return fpath.to_str().unwrap().to_string();
     }
-    pub fn run_ssh_cmd(&self, cmd: Vec<&str>) -> Result<(), InnisfreeError> {
+    pub fn run_ssh_cmd(&self, cmd: Vec<&str>) -> Result<()> {
         trace!("Entering run_ssh_cmd");
-        let ssh_kp = &self.server.ssh_client_keypair.write_locally(&self.name);
+        let ssh_kp = &self.server.ssh_client_keypair.write_locally(&self.name)?;
         let known_hosts = &self.known_hosts();
         let mut known_hosts_opt = "UserKnownHostsFile=".to_owned();
         known_hosts_opt.push_str(known_hosts);
@@ -227,14 +216,10 @@ impl InnisfreeManager {
                     trace!("Yes, process was truly successful");
                     Ok(())
                 } else {
-                    error!("SSH command failed: {}", s);
-                    Err(InnisfreeError::SshCommandFailure)
+                    Err(anyhow!(format!("SSH command failed: {}", s)))
                 }
             }
-            Err(e) => {
-                error!("SSH command failed: {}", e);
-                Err(InnisfreeError::SshCommandFailure)
-            }
+            Err(e) => Err(anyhow!(format!("SSH command failed: {}", e))),
         }
     }
     pub async fn clean(&self) {
@@ -244,7 +229,7 @@ impl InnisfreeManager {
         let _ = self.server.destroy().await;
         clean_config_dir(&self.name);
     }
-    pub async fn assign_floating_ip(&self, floating_ip: &str) -> Result<(), InnisfreeError> {
+    pub async fn assign_floating_ip(&self, floating_ip: &str) -> Result<()> {
         self.server.assign_floating_ip(floating_ip).await
     }
 }
@@ -297,7 +282,7 @@ pub async fn run_proxy(
     local_ip: IpAddr,
     dest_ip: IpAddr,
     services: Vec<ServicePort>,
-) -> Result<(), InnisfreeError> {
+) -> Result<()> {
     // We'll kick off a dedicated proxy for each service,
     // and collect the handles to await them all together, concurrently.
     let mut tasks = vec![];
@@ -320,8 +305,7 @@ pub async fn run_proxy(
                 debug!("Service proxy returned ok: {:?}", t);
             }
             Err(e) => {
-                error!("Service proxy failed: {}", e);
-                return Err(InnisfreeError::Unknown);
+                return Err(anyhow!("Service proxy failed: {}", e));
             }
         }
     }

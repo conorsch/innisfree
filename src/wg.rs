@@ -1,10 +1,10 @@
+use anyhow::{anyhow, Context, Result};
 use std::io::prelude::*;
 use std::net::IpAddr;
 use std::process::{Command, Stdio};
 use std::str;
 
 use crate::config::{make_config_dir, ServicePort};
-use crate::error::InnisfreeError;
 use crate::net::generate_unused_subnet;
 
 extern crate tera;
@@ -21,14 +21,10 @@ pub struct WireguardKeypair {
 }
 
 impl WireguardKeypair {
-    pub fn new() -> Result<WireguardKeypair, InnisfreeError> {
+    pub fn new() -> Result<WireguardKeypair> {
         let privkey = match generate_wireguard_privkey() {
             Ok(p) => p,
-            Err(_) => {
-                return Err(InnisfreeError::CommandFailure {
-                    msg: "Failed to generate wireguard keypair".to_owned(),
-                })
-            }
+            Err(_) => return Err(anyhow!("Failed to generate wireguard keypair")),
         };
         let pubkey = derive_wireguard_pubkey(&privkey)?;
         Ok(WireguardKeypair {
@@ -56,7 +52,7 @@ pub struct WireguardDevice {
 
 impl WireguardDevice {
     // Returns contents of an INI config file for WG, e.g. 'wg0.conf' in docs.
-    pub fn config(&self) -> String {
+    pub fn config(&self) -> Result<String> {
         let wg_template = include_str!("../files/wg0.conf.j2");
         let mut context = tera::Context::new();
         context.insert("wireguard_device", &self);
@@ -65,25 +61,28 @@ impl WireguardDevice {
         let empty_rules: Vec<ServicePort> = Vec::new();
         context.insert("services", &empty_rules);
         // Disable autoescaping, since it breaks wg key contents
-        tera::Tera::one_off(wg_template, &context, false).unwrap()
+        tera::Tera::one_off(wg_template, &context, false)
+            .context("Failed to write wireguard config")
     }
 
-    pub fn config_with_services(&self, services: &[ServicePort]) -> String {
+    pub fn config_with_services(&self, services: &[ServicePort]) -> Result<String> {
         let wg_template = include_str!("../files/wg0.conf.j2");
         let mut context = tera::Context::new();
         context.insert("wireguard_device", &self);
         context.insert("services", &services);
         // Disable autoescaping, since it breaks wg key contents
-        tera::Tera::one_off(wg_template, &context, false).unwrap()
+        tera::Tera::one_off(wg_template, &context, false)
+            .context("Failed to write wireguard config for multiple services")
     }
 
-    pub fn write_locally(&self, service_name: &str, services: &[ServicePort]) {
+    pub fn write_locally(&self, service_name: &str, services: &[ServicePort]) -> Result<()> {
         let mut wg_config_path = std::path::PathBuf::from(make_config_dir(service_name));
         let wg_iface_name = format!("{}.conf", service_name);
         wg_config_path.push(wg_iface_name);
         let mut f = std::fs::File::create(&wg_config_path).unwrap();
-        let wg_config = &self.config_with_services(services);
-        f.write_all(wg_config.as_bytes()).unwrap();
+        let wg_config = &self.config_with_services(services)?;
+        f.write_all(wg_config.as_bytes())?;
+        Ok(())
     }
 }
 
@@ -101,7 +100,7 @@ pub struct WireguardManager {
 }
 
 impl WireguardManager {
-    pub fn new(service_name: &str) -> Result<WireguardManager, InnisfreeError> {
+    pub fn new(service_name: &str) -> Result<WireguardManager> {
         let wg_subnet = generate_unused_subnet()?;
         let s = wg_subnet.hosts().collect::<Vec<IpAddr>>();
 
@@ -152,13 +151,11 @@ impl WireguardManager {
     }
 }
 
-fn generate_wireguard_privkey() -> Result<String, InnisfreeError> {
+fn generate_wireguard_privkey() -> Result<String> {
     // Call out to "wg genkey" and collect output.
     // Ideally we'd generate these values in pure Rust, but
     // calling out to wg as a first draft.
-    let privkey_cmd = std::process::Command::new("wg")
-        .args(["genkey"])
-        .output()?;
+    let privkey_cmd = std::process::Command::new("wg").args(["genkey"]).output()?;
     let privkey: String = str::from_utf8(&privkey_cmd.stdout)
         .unwrap()
         .trim()
@@ -166,7 +163,7 @@ fn generate_wireguard_privkey() -> Result<String, InnisfreeError> {
     Ok(privkey)
 }
 
-fn derive_wireguard_pubkey(privkey: &str) -> Result<String, InnisfreeError> {
+fn derive_wireguard_pubkey(privkey: &str) -> Result<String> {
     // Open a pipe to 'wg genkey', to pass in the privkey
     let pubkey_cmd = Command::new("wg")
         .args(["pubkey"])
@@ -175,18 +172,10 @@ fn derive_wireguard_pubkey(privkey: &str) -> Result<String, InnisfreeError> {
         .spawn()?;
 
     // Write wg privkey to stdin on pubkey process
-    pubkey_cmd
-        .stdin
-        .unwrap()
-        .write_all(privkey.as_bytes())
-        .unwrap();
+    pubkey_cmd.stdin.unwrap().write_all(privkey.as_bytes())?;
 
     let mut pubkey = String::new();
-    pubkey_cmd
-        .stdout
-        .unwrap()
-        .read_to_string(&mut pubkey)
-        .unwrap();
+    pubkey_cmd.stdout.unwrap().read_to_string(&mut pubkey)?;
 
     pubkey = pubkey.trim().to_string();
     Ok(pubkey)
@@ -204,7 +193,7 @@ mod tests {
             interface: wg_hosts[0].clone(),
             peer: wg_hosts[1].clone(),
         };
-        let wg_config = wg_device.config();
+        let wg_config = wg_device.config().unwrap();
         assert!(wg_config.contains("Interface"));
         assert!(wg_config.contains("PrivateKey = "));
 

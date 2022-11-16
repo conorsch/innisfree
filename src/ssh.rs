@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use std::fs::read_to_string;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
@@ -8,7 +9,6 @@ use std::io::Write;
 extern crate tempfile;
 
 use crate::config::make_config_dir;
-use crate::error::InnisfreeError;
 
 #[derive(Debug)]
 pub struct SshKeypair {
@@ -18,7 +18,7 @@ pub struct SshKeypair {
 }
 
 impl SshKeypair {
-    pub fn new(prefix: &str) -> Result<SshKeypair, InnisfreeError> {
+    pub fn new(prefix: &str) -> Result<SshKeypair> {
         create_ssh_keypair(prefix)
     }
 
@@ -30,7 +30,7 @@ impl SshKeypair {
         key_name
     }
     // Store keypair on disk, in config dir
-    pub fn write_locally(&self, service_name: &str) -> String {
+    pub fn write_locally(&self, service_name: &str) -> Result<String> {
         let config_dir = make_config_dir(service_name);
         let key_name = self.filename();
         let privkey_filepath: String = Path::new(&config_dir)
@@ -51,19 +51,20 @@ impl SshKeypair {
         //    }
         // }
         fop.mode(0o600);
-        let mut f = fop.open(&privkey_filepath).unwrap();
+        let mut f = fop.open(&privkey_filepath)?;
         // std::fs::write(&privkey_filepath, &self.private).expect("Failed to write SSH privkey");
         f.write_all(self.private.as_bytes())
-            .expect("Failed to write SSH privkey");
+            .context("Failed to write SSH privkey")?;
 
         // Pubkey is public, so default umask is fine, expecting 644 or so.
         let pubkey_filepath = String::from(&privkey_filepath) + ".pub";
-        std::fs::write(&pubkey_filepath, &self.public).expect("Failed to write SSH pubkey");
-        privkey_filepath
+        std::fs::write(&pubkey_filepath, &self.public)
+            .map_err(|e| anyhow::Error::new(e).context("Failed to write SSH pubkey"))?;
+        Ok(privkey_filepath)
     }
 }
 
-fn create_ssh_keypair(prefix: &str) -> Result<SshKeypair, InnisfreeError> {
+fn create_ssh_keypair(prefix: &str) -> Result<SshKeypair> {
     // Really clumsy with Path & PathBuf, so converting everything to Strings for now
     let tmpfile = tempfile::NamedTempFile::new()?;
     let tmpfile = tmpfile.path();
@@ -92,9 +93,8 @@ fn create_ssh_keypair(prefix: &str) -> Result<SshKeypair, InnisfreeError> {
         .status();
     match status {
         Ok(_) => {}
-        Err(_) => {
-            let msg = "Failed to generate SSH keypair".to_owned();
-            return Err(InnisfreeError::CommandFailure { msg });
+        Err(e) => {
+            return Err(anyhow::Error::new(e).context("Failed to generate SSH keypair"));
         }
     }
 

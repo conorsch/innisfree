@@ -12,7 +12,6 @@ use env_logger::Env;
 // Innisfree imports
 mod config;
 mod doctor;
-mod error;
 mod manager;
 mod net;
 mod proxy;

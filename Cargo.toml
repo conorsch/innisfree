@@ -12,6 +12,7 @@ categories = ["command-line-utilities", "network-programming"]
 keywords = ["self-hosting", "wireguard"]
 
 [dependencies]
+anyhow = "*"
 clap = "3.0.0-beta.2"
 custom_error = "~1.9"
 env_logger = "~0.9"

@@ -1,11 +1,11 @@
-use crate::error::InnisfreeError;
+use anyhow::Result;
 use futures::FutureExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
 // Taken from Tokio proxy example (MIT license):
 // https://github.com/tokio-rs/tokio/blob/a08ce0d3e06d650361283dc87c8fe14b146df15d/examples/proxy.rs
-pub async fn transfer(mut inbound: TcpStream, proxy_addr: String) -> Result<(), InnisfreeError> {
+pub async fn transfer(mut inbound: TcpStream, proxy_addr: String) -> Result<()> {
     let mut outbound = TcpStream::connect(proxy_addr).await?;
 
     let (mut ri, mut wi) = inbound.split();
@@ -26,7 +26,7 @@ pub async fn transfer(mut inbound: TcpStream, proxy_addr: String) -> Result<(), 
     Ok(())
 }
 
-pub async fn proxy_handler(listen_addr: String, dest_addr: String) -> Result<(), InnisfreeError> {
+pub async fn proxy_handler(listen_addr: String, dest_addr: String) -> Result<()> {
     debug!("Proxying traffic: {} -> {}", listen_addr, dest_addr);
     let listener = tokio::net::TcpListener::bind(&listen_addr).await?;
     while let Ok((inbound, _)) = listener.accept().await {

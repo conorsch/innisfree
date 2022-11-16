@@ -1,4 +1,4 @@
-use crate::error::InnisfreeError;
+use anyhow::{anyhow, Result};
 use ipnet::IpNet;
 use std::net::IpAddr;
 // Cutting corners here. IP addresses should be customizable,
@@ -36,9 +36,9 @@ fn subnet_available(n: IpNet) -> bool {
 /// Within that range, an unused /30 will be returned if possible. Otherwise,
 /// an error is returned. The /30 setting for child subnets is hardcoded,
 /// because the WireguardManager only cares about pairs of 2 addresses, i.e. /30.
-pub fn generate_unused_subnet() -> Result<IpNet, InnisfreeError> {
+pub fn generate_unused_subnet() -> Result<IpNet> {
     let parent_net: IpNet = INNISFREE_SUBNET.parse()?;
-    let subnets = parent_net.subnets(30).unwrap().collect::<Vec<IpNet>>();
+    let subnets = parent_net.subnets(30)?.collect::<Vec<IpNet>>();
     for subnet in subnets {
         // Skip initial subnet, which is the entirety of the parent_net, /28.
         // We only consider /30s.
@@ -49,7 +49,10 @@ pub fn generate_unused_subnet() -> Result<IpNet, InnisfreeError> {
             return Ok(subnet);
         }
     }
-    Err(InnisfreeError::Unknown)
+    Err(anyhow!(format!(
+        "No available subnets within {}",
+        parent_net
+    )))
 }
 
 #[cfg(test)]
@@ -62,6 +65,6 @@ mod tests {
         // Ideally we'd test against 10.50.0.1/30, which is the same,
         // but breaks equality assertion.
         let x: ipnet::IpNet = "10.50.0.0/30".parse().unwrap();
-        assert!(n == x);
+        assert_eq!(n, x);
     }
 }

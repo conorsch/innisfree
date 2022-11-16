@@ -6,6 +6,8 @@ use std::net::IpAddr;
 use std::thread;
 use std::time;
 
+use anyhow::{anyhow, Result};
+
 // Web API request imports, see
 // https://rust-lang-nursery.github.io/rust-cookbook/web/clients/apis.html
 extern crate reqwest;
@@ -23,7 +25,6 @@ use self::cloudinit::generate_user_data;
 use self::floating_ip::FloatingIp;
 use self::ssh_key::DigitalOceanSshKey;
 use crate::config::ServicePort;
-use crate::error::InnisfreeError;
 use crate::ssh::SshKeypair;
 use crate::wg::WireguardManager;
 
@@ -50,7 +51,7 @@ impl InnisfreeServer {
         name: &str,
         services: Vec<ServicePort>,
         wg_mgr: WireguardManager,
-    ) -> Result<InnisfreeServer, InnisfreeError> {
+    ) -> Result<InnisfreeServer> {
         // Initialize variables outside struct, so we'll need to pass them around
         let ssh_client_keypair = SshKeypair::new("client")?;
         let ssh_server_keypair = SshKeypair::new("server")?;
@@ -71,15 +72,15 @@ impl InnisfreeServer {
         let droplet = &self.droplet;
         droplet.ipv4_address()
     }
-    pub async fn assign_floating_ip(&self, floating_ip: &str) -> Result<(), InnisfreeError> {
-        let fip: IpAddr = floating_ip.parse().unwrap();
+    pub async fn assign_floating_ip(&self, floating_ip: &str) -> Result<()> {
+        let fip: IpAddr = floating_ip.parse()?;
         let f = FloatingIp {
             ip: fip,
             droplet_id: self.droplet.id,
         };
         f.assign().await
     }
-    pub async fn destroy(&self) -> Result<(), InnisfreeError> {
+    pub async fn destroy(&self) -> Result<()> {
         // Destroys backing droplet
         self.droplet.destroy().await
     }
@@ -98,11 +99,7 @@ struct Droplet {
 }
 
 impl Droplet {
-    async fn new(
-        name: &str,
-        user_data: &str,
-        public_key: String,
-    ) -> Result<Droplet, InnisfreeError> {
+    async fn new(name: &str, user_data: &str, public_key: String) -> Result<Droplet> {
         debug!("Creating new DigitalOcean Droplet");
         // Build JSON request body, for sending to DigitalOcean API
         let do_ssh_key = DigitalOceanSshKey::new(name.to_owned(), public_key).await?;
@@ -131,7 +128,7 @@ impl Droplet {
 
         let j: serde_json::Value = response.json().await?;
         let d: String = j["droplet"].to_string();
-        let mut droplet: Droplet = serde_json::from_str(&d).unwrap();
+        let mut droplet: Droplet = serde_json::from_str(&d)?;
         // Add SSH key info after creation, since JSON response won't include it,
         // even though JSON request did. We'll need it to clean up in `self.destroy`.
         droplet.ssh_pubkey = Some(do_ssh_key);
@@ -139,7 +136,7 @@ impl Droplet {
         droplet.wait_for_boot().await
     }
 
-    async fn wait_for_boot(&self) -> Result<Droplet, InnisfreeError> {
+    async fn wait_for_boot(&self) -> Result<Droplet> {
         // The JSON response for droplet creation won't include info like
         // public IPv4 address, because that hasn't been assigned yet. The 'status'
         // field will show as "new", so wait until it's "active", then network info
@@ -155,8 +152,8 @@ impl Droplet {
                         continue;
                     }
                 }
-                Err(_e) => {
-                    return Err(InnisfreeError::Unknown);
+                Err(_) => {
+                    return Err(anyhow!("Unknown error while waiting for droplet boot"));
                 }
             }
         }
@@ -164,7 +161,7 @@ impl Droplet {
 
     // IPv4 lookup can fail, should return Result to force handling.
     pub fn ipv4_address(&self) -> IpAddr {
-        let mut s: String = "".to_string();
+        let mut s = String::new();
         for v4_network in &self.networks["v4"] {
             if v4_network["type"] == "public" {
                 s = v4_network["ip_address"].clone();
@@ -174,14 +171,11 @@ impl Droplet {
         let ip: IpAddr = s.parse().unwrap();
         ip
     }
-    pub async fn destroy(&self) -> Result<(), InnisfreeError> {
-        match &self.ssh_pubkey {
-            Some(k) => {
-                k.destroy().await?;
-            }
-            None => {
-                warn!("No API pubkey associated with droplet, not destroying");
-            }
+    pub async fn destroy(&self) -> Result<()> {
+        if let Some(k) = &self.ssh_pubkey {
+            k.destroy().await?;
+        } else {
+            warn!("No API pubkey associated with droplet, not destroying");
         }
         destroy_droplet(self).await?;
         Ok(())
@@ -190,7 +184,7 @@ impl Droplet {
 
 // Polls a droplet resource to get the latest data. Used during wait for boot,
 // to capture networking info like PublicIPv4, which is assigned after creation.
-async fn get_droplet(droplet: &Droplet) -> Result<Droplet, InnisfreeError> {
+async fn get_droplet(droplet: &Droplet) -> Result<Droplet> {
     let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
     let request_url = DO_API_BASE_URL.to_owned() + "/" + &droplet.id.to_string();
 
@@ -203,13 +197,13 @@ async fn get_droplet(droplet: &Droplet) -> Result<Droplet, InnisfreeError> {
         .error_for_status()?;
     let j: serde_json::Value = response.json().await?;
     let d_s: String = j["droplet"].to_string();
-    let mut d: Droplet = serde_json::from_str(&d_s).unwrap();
+    let mut d: Droplet = serde_json::from_str(&d_s)?;
     d.ssh_pubkey = droplet.ssh_pubkey.clone();
     Ok(d)
 }
 
 // Calls the API to destroy a droplet.
-async fn destroy_droplet(droplet: &Droplet) -> Result<(), InnisfreeError> {
+async fn destroy_droplet(droplet: &Droplet) -> Result<()> {
     let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
     let request_url = DO_API_BASE_URL.to_owned() + "/" + &droplet.id.to_string();
 
@@ -225,9 +219,6 @@ async fn destroy_droplet(droplet: &Droplet) -> Result<(), InnisfreeError> {
             debug!("Droplet destroyed");
             Ok(())
         }
-        Err(e) => {
-            error!("Failed to destroy droplet: {}", e);
-            Err(InnisfreeError::NetworkError { source: e })
-        }
+        Err(e) => Err(anyhow!("Failed to destroy droplet: {}", e)),
     }
 }

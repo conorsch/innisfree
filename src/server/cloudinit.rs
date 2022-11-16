@@ -2,11 +2,11 @@
 // used to customize a server on first boot.
 use std::net::IpAddr;
 
+use anyhow::Result;
 extern crate serde;
 use serde::{Deserialize, Serialize};
 
 use crate::config::ServicePort;
-use crate::error::InnisfreeError;
 use crate::server::ssh_key::get_all_keys;
 use crate::ssh::SshKeypair;
 use crate::wg::WireguardManager;
@@ -43,11 +43,11 @@ pub async fn generate_user_data(
     ssh_server_keypair: &SshKeypair,
     wg_mgr: &WireguardManager,
     services: &[ServicePort],
-) -> Result<String, InnisfreeError> {
+) -> Result<String> {
     let user_data = include_str!("../../files/cloudinit.cfg");
     let user_data = user_data.to_string();
 
-    let mut cloud_config = serde_yaml::from_str::<CloudConfig>(&user_data).unwrap();
+    let mut cloud_config = serde_yaml::from_str::<CloudConfig>(&user_data)?;
     cloud_config.ssh_keys.insert(
         "ed25519_public".to_string(),
         ssh_server_keypair.public.to_string(),
@@ -59,7 +59,7 @@ pub async fn generate_user_data(
 
     let wg = CloudConfigFile {
         // Use the template without firewall rules
-        content: wg_mgr.wg_remote_device.config(),
+        content: wg_mgr.wg_remote_device.config()?,
         owner: String::from("root:root"),
         permissions: String::from("0644"),
         path: String::from("/tmp/innisfree.conf"),
@@ -91,16 +91,16 @@ pub async fn generate_user_data(
 
     cloud_config.users[0].ssh_authorized_keys = cloud_config_ssh_keys;
 
-    let cc_rendered: String = serde_yaml::to_string(&cloud_config).unwrap();
+    let cc_rendered: String = serde_yaml::to_string(&cloud_config)?;
     let cc_rendered_no_header = &cc_rendered.as_bytes()[4..];
-    let cc_rendered = std::str::from_utf8(cc_rendered_no_header).unwrap();
+    let cc_rendered = std::str::from_utf8(cc_rendered_no_header)?;
     let mut cc: String = String::from("#cloud-config");
     cc.push('\n');
     cc.push_str(cc_rendered);
     Ok(cc)
 }
 
-fn nginx_streams(services: &[ServicePort], dest_ip: IpAddr) -> Result<String, InnisfreeError> {
+fn nginx_streams(services: &[ServicePort], dest_ip: IpAddr) -> Result<String> {
     let nginx_config = include_str!("../../files/stream.conf.j2");
     let mut context = tera::Context::new();
     context.insert("services", services);
@@ -109,7 +109,7 @@ fn nginx_streams(services: &[ServicePort], dest_ip: IpAddr) -> Result<String, In
     let result = tera::Tera::one_off(nginx_config, &context, false);
     match result {
         Ok(r) => Ok(r),
-        Err(e) => Err(InnisfreeError::Template { source: e }),
+        Err(e) => Err(anyhow::Error::new(e).context("Template generation failed")),
     }
 }
 
