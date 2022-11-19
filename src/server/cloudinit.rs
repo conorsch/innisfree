@@ -2,7 +2,7 @@
 // used to customize a server on first boot.
 use std::net::IpAddr;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 extern crate serde;
 use serde::{Deserialize, Serialize};
 
@@ -106,11 +106,7 @@ fn nginx_streams(services: &[ServicePort], dest_ip: IpAddr) -> Result<String> {
     context.insert("services", services);
     context.insert("dest_ip", &dest_ip.to_string());
     // Disable autoescaping, since it breaks wg key contents
-    let result = tera::Tera::one_off(nginx_config, &context, false);
-    match result {
-        Ok(r) => Ok(r),
-        Err(e) => Err(anyhow::Error::new(e).context("Template generation failed")),
-    }
+    tera::Tera::one_off(nginx_config, &context, false).context("Template generation failed")
 }
 
 #[cfg(test)]

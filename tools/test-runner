@@ -17,11 +17,20 @@ test_string="Hello, world! $(uuid)"
 echo "$test_string" > "${dst_dir}/index.html"
 
 # Make sure to clean up afterwards
-trap 'jobs -p | xargs -r kill ; rm -rf "$dst_dir"; reset' EXIT
+cleanup() {
+    # disable 'set -e' to ensure all these cleanup tasks run
+    set +e
+    jobs -p | xargs -r kill
+    rm -rf "$dst_dir"
+    reset
+}
+trap 'cleanup' EXIT
 
-# Build the latest
-{ cargo run -- up -p "$local_port" & sleep 90s ; } &
-wait
+# We don't use 'cargo run' because we want SIGINT to tear down the process.
+# Wrapping innisfree in 'cargo run' may interfere with signal handling.
+cargo build
+./target/x86_64-unknown-linux-musl/debug/innisfree up -p "$local_port" &
+sleep 90
 
 # Host webroot containing test string
 python3 -m http.server --directory "$dst_dir" "$local_port" &
@@ -31,16 +40,19 @@ sleep 1
 # over both localhost (as control) and remote IP.
 curl -I "http://localhost:${local_port}"
 result_string="$(curl -s --connect-timeout 3 --max-time 5 "http://$(cargo run -- ip):${local_port}")"
+result=0
 if [[ "$test_string" != "$result_string" ]] ; then
     echo "ERROR: Failed to find test string: '$test_string'" >&2
     jobs -p | xargs -r kill
-    exit 1
+    result=1
 else
     echo "SUCCESS: Found test string: '$test_string'" >&2
     echo "Cleaning up..." >&2
     # use SIGINT to kill because I haven't figured out how to catch other signals
     jobs -p | xargs -r kill -s SIGINT
-    exit 0
+    sleep 5
+    result=0
 fi
 
 wait
+exit "$result"

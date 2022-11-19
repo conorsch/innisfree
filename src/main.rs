@@ -1,7 +1,7 @@
+use anyhow::{anyhow, Context, Result};
 use clap::Arg;
 use clap::{crate_version, App};
 use std::env;
-use std::error::Error;
 use std::net::IpAddr;
 use std::sync::Arc;
 
@@ -20,7 +20,7 @@ mod ssh;
 mod wg;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<()> {
     // Activate env_logger https://github.com/env-logger-rs/env_logger
     // The `Env` lets us tweak what the environment
     // variables to read are and what the default
@@ -117,31 +117,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Primary subcommand. Soup to nuts experience.
     if let Some(matches) = matches.subcommand_matches("up") {
         // Ensure DigitalOcean API token is defined
-        let do_token;
-        match env::var("DIGITALOCEAN_API_TOKEN") {
-            Ok(val) => do_token = val,
-            Err(_e) => do_token = "".to_string(),
-        }
-        if do_token.is_empty() {
-            error!("DIGITALOCEAN_API_TOKEN env var not set");
-            std::process::exit(1);
-        }
+        let _do_token =
+            env::var("DIGITALOCEAN_API_TOKEN").context("DIGITALOCEAN_API_TOKEN env var not set");
 
         let dest_ip: IpAddr = matches.value_of("dest-ip").unwrap().parse().unwrap();
         let port_spec = matches.value_of("ports").unwrap();
         let floating_ip = matches.value_of("floating-ip").unwrap();
         let tunnel_name = config::clean_name(matches.value_of("name").unwrap());
-        let services = config::ServicePort::from_str_multi(port_spec);
+        let services = config::ServicePort::from_str_multi(port_spec)?;
         info!("Will provide proxies for {:?}", services);
 
         info!("Creating server '{}'", &tunnel_name);
-        let mgr = match manager::InnisfreeManager::new(&tunnel_name, services).await {
-            Ok(m) => m,
-            Err(e) => {
-                error!("{}", e);
-                std::process::exit(2);
-            }
-        };
+        let mgr = manager::InnisfreeManager::new(&tunnel_name, services).await?;
         let mgr = Arc::new(mgr);
         info!("Configuring server");
         match mgr.up() {
@@ -152,7 +139,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 error!("Failed bringing up tunnel: {}", e);
                 // Error probably unrecoverable
                 warn!("Attempting to exit gracefully...");
-                mgr.clean().await;
+                mgr.clean().await?;
                 std::process::exit(2);
             }
         }
@@ -174,7 +161,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let local_ip: IpAddr = mgr.wg.wg_local_device.interface.address;
         if &dest_ip.to_string() != "127.0.0.1" {
             tokio::spawn(manager::run_proxy(local_ip, dest_ip, mgr.services.clone()));
-            mgr.block().await;
+            mgr.block().await?;
         } else {
             info!(
                 "Ready to listen on {}. Start local services. Make sure to bind to {}, rather than 127.0.0.1!",
@@ -183,67 +170,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
             );
             debug!("Blocking forever. Press ctrl+c to tear down the tunnel and destroy server.");
             // Block forever, ctrl+c will interrupt
-            mgr.block().await;
+            mgr.block().await?;
         }
     } else if let Some(matches) = matches.subcommand_matches("ssh") {
         let tunnel_name = config::clean_name(matches.value_of("name").unwrap());
-        let result = manager::open_shell(&tunnel_name);
-        match result {
-            Ok(_) => trace!("Interactive SSH session completed successfully"),
-            Err(_) => {
-                error!(
-                    "Server not found. Try running 'innisfree up' first, or pass --name=<service>"
-                );
-                std::process::exit(3);
-            }
-        }
+        manager::open_shell(&tunnel_name).context(
+            "Server not found. Try running 'innisfree up' first, or pass --name=<service>",
+        )?;
     } else if let Some(matches) = matches.subcommand_matches("ip") {
         let tunnel_name = config::clean_name(matches.value_of("name").unwrap());
-        let ip = manager::get_server_ip(&tunnel_name);
-        match ip {
-            Ok(ip) => {
-                println!("{}", ip);
-            }
-            Err(_) => {
-                error!(
-                    "Server not found. Try running 'innisfree up' first, or pass --name=<service>."
-                );
-                std::process::exit(2);
-            }
-        }
+        let ip = manager::get_server_ip(&tunnel_name).context(
+            "Server not found. Try running 'innisfree up' first, or pass --name=<service>.",
+        )?;
+        println!("{}", ip);
     } else if let Some(matches) = matches.subcommand_matches("proxy") {
         warn!("Subcommand 'proxy' only intended for debugging, it assumes tunnel exists already");
         let dest_ip: IpAddr = matches.value_of("dest-ip").unwrap().parse().unwrap();
         let port_spec = matches.value_of("ports").unwrap();
-        let ports = config::ServicePort::from_str_multi(port_spec);
+        let ports = config::ServicePort::from_str_multi(port_spec).unwrap();
         let local_ip: IpAddr = "127.0.0.1".parse().unwrap();
         warn!("Ctrl+c will not halt proxy, use ctrl+z and `kill -9 %1`");
         info!("Starting proxy for services {:?}", ports);
-        match manager::run_proxy(local_ip, dest_ip, ports).await {
-            Ok(_) => {}
-            Err(e) => {
-                error!("Proxy failed: {}", e);
-                std::process::exit(4);
-            }
-        };
+        manager::run_proxy(local_ip, dest_ip, ports)
+            .await
+            .map_err(|e| anyhow!(format!("Proxy failed: {}", e)))?;
     } else if let Some(_matches) = matches.subcommand_matches("doctor") {
         info!("Running doctor, to determine platform support...");
-        match doctor::platform_is_supported() {
-            Ok(result) => {
-                if result {
-                    info!("Platform support looks good! Ready to rock.");
-                } else {
-                    error!("Found some problems. Resolve those, then rerun doctor.");
-                }
-            }
-            Err(_) => {
-                error!(
-                    "Platform is not supported. =( \
-                       Only recent Linux distros such as Debian, Ubuntu, or Fedora are supported."
-                );
-                std::process::exit(5);
-            }
-        }
+        doctor::platform_is_supported()?;
+        info!("Platform support looks good! Ready to rock.");
     }
 
     Ok(())

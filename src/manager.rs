@@ -2,9 +2,10 @@ use crate::config::{clean_config_dir, make_config_dir, ServicePort};
 use crate::proxy::proxy_handler;
 use crate::server::InnisfreeServer;
 use crate::wg::WireguardManager;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use futures::future::join_all;
 use std::net::{IpAddr, SocketAddr, TcpStream};
+use std::path::PathBuf;
 use tokio::signal;
 
 #[derive(Debug)]
@@ -18,7 +19,7 @@ pub struct InnisfreeManager {
 
 impl InnisfreeManager {
     pub async fn new(tunnel_name: &str, services: Vec<ServicePort>) -> Result<InnisfreeManager> {
-        clean_config_dir(tunnel_name);
+        clean_config_dir(tunnel_name)?;
         let wg = WireguardManager::new(tunnel_name)?;
         let server = InnisfreeServer::new(tunnel_name, services, wg.clone()).await?;
         Ok(InnisfreeManager {
@@ -69,11 +70,11 @@ impl InnisfreeManager {
     }
     /// Wait for an interrupt signal, then terminate gracefully,
     /// cleaning up droplet resources before exit.
-    pub async fn block(&self) {
+    pub async fn block(&self) -> Result<()> {
         match signal::ctrl_c().await {
             Ok(()) => {
                 warn!("Received stop signal, exiting gracefully");
-                self.clean().await;
+                self.clean().await?;
                 info!("Clean up complete, exiting");
                 std::process::exit(0);
             }
@@ -87,35 +88,19 @@ impl InnisfreeManager {
         trace!("Inside test connection, setting up vars");
         let ip = &self.wg.wg_remote_ip;
         trace!("Inside test connection, running ping cmd");
-        let status = std::process::Command::new("ping")
+        std::process::Command::new("ping")
             .arg("-c1")
             .arg("-w5")
             .arg(&ip.to_string())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .status();
-        trace!("Inside test connection, evaluating match");
-        match status {
-            Ok(s) => {
-                if s.success() {
-                    debug!("Confirmed tunnel is established, able to ping across it");
-                    Ok(())
-                } else {
-                    Err(anyhow!(
-                        "Failed to ping remote Wireguard interface, tunnel broken"
-                    ))
-                }
-            }
-            Err(_) => {
-                trace!("Inside test connection match, OK, failure");
-                Err(anyhow!(
-                    "Failed to ping remote Wireguard interface, tunnel broken"
-                ))
-            }
-        }
+            .status()
+            .context("Failed to ping remote Wireguard interface, tunnel broken")?;
+        debug!("Confirmed tunnel is established, able to ping across it");
+        Ok(())
     }
-    pub fn config_dir(&self) -> Result<String> {
-        Ok(make_config_dir(&self.name))
+    pub fn config_dir(&self) -> Result<PathBuf> {
+        make_config_dir(&self.name)
     }
     pub fn bring_up_remote_wg(&self) -> Result<()> {
         let cmd = vec!["wg-quick", "up", "/tmp/innisfree.conf"];
@@ -131,64 +116,43 @@ impl InnisfreeManager {
         let mut fpath = std::path::PathBuf::from(&self.config_dir()?);
         fpath.push(format!("{}.conf", &self.name));
         trace!("Running local wg-quick cmd");
-        let result = std::process::Command::new("wg-quick")
+        std::process::Command::new("wg-quick")
             .arg("up")
             .arg(fpath.to_str().unwrap())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .status();
-        trace!("Inspecting wg-quick results: pre-match");
-        match result {
-            Ok(r) => {
-                trace!("Inspecting wg-quick results: inside OK");
-                if r.success() {
-                    trace!("Inspecting wg-quick results: inside OK, inside success");
-                    Ok(())
-                } else {
-                    trace!("Inspecting wg-quick results: inside OK, inside failure");
-                    Err(anyhow!("Failed to bring up local Wireguard interface"))
-                }
-            }
-            Err(_) => Err(anyhow!("Failed to bring up local Wireguard interface")),
-        }
+            .status()?;
+        Ok(())
     }
     pub fn bring_down_local_wg(&self) -> Result<()> {
         let cmd = "wg-quick";
-        let mut fpath = std::path::PathBuf::from(make_config_dir(&self.name));
+        let mut fpath = make_config_dir(&self.name)?;
         fpath.push(format!("{}.conf", &self.name));
         let cmd_args = vec!["down", fpath.to_str().unwrap()];
-        let result = std::process::Command::new(cmd)
+        std::process::Command::new(cmd)
             .args(cmd_args)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .status();
-        match result {
-            Ok(r) => {
-                if r.success() {
-                    Ok(())
-                } else {
-                    Err(anyhow!("Failed to remove local Wireguard interface"))
-                }
-            }
-            Err(_) => Err(anyhow!("Failed to remove local Wireguard interface")),
-        }
+            .status()
+            .context("Failed to remove local Wireguard interface")?;
+        Ok(())
     }
-    pub fn known_hosts(&self) -> String {
+    pub fn known_hosts(&self) -> Result<String> {
         let ipv4_address = &self.server.ipv4_address();
         let server_host_key = &self.server.ssh_server_keypair.public;
         let mut host_line = ipv4_address.to_string();
         host_line.push(' ');
         host_line.push_str(server_host_key);
 
-        let mut fpath = std::path::PathBuf::from(make_config_dir(&self.name));
+        let mut fpath = make_config_dir(&self.name)?;
         fpath.push("known_hosts");
         std::fs::write(fpath.to_str().unwrap(), host_line).expect("Failed to create known_hosts");
-        return fpath.to_str().unwrap().to_string();
+        Ok(fpath.to_str().unwrap().to_string())
     }
     pub fn run_ssh_cmd(&self, cmd: Vec<&str>) -> Result<()> {
         trace!("Entering run_ssh_cmd");
         let ssh_kp = &self.server.ssh_client_keypair.write_locally(&self.name)?;
-        let known_hosts = &self.known_hosts();
+        let known_hosts = &self.known_hosts()?;
         let mut known_hosts_opt = "UserKnownHostsFile=".to_owned();
         known_hosts_opt.push_str(known_hosts);
         let ipv4_address = &self.server.ipv4_address().to_string();
@@ -204,39 +168,30 @@ impl InnisfreeManager {
             ipv4_address,
         ];
         cmd_args.extend(cmd);
-        let status = std::process::Command::new("ssh")
+        std::process::Command::new("ssh")
             .args(cmd_args)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .status();
-        match status {
-            Ok(s) => {
-                trace!("SSH command ran, checking status code of returned process");
-                if s.success() {
-                    trace!("Yes, process was truly successful");
-                    Ok(())
-                } else {
-                    Err(anyhow!(format!("SSH command failed: {}", s)))
-                }
-            }
-            Err(e) => Err(anyhow!(format!("SSH command failed: {}", e))),
-        }
+            .status()
+            .context("SSH command failed")?;
+        Ok(())
     }
-    pub async fn clean(&self) {
+    pub async fn clean(&self) -> Result<()> {
         debug!("Removing local Wireguard interface");
         // Ignore errors, since we want to try all handlers
         let _ = self.bring_down_local_wg();
         let _ = self.server.destroy().await;
-        clean_config_dir(&self.name);
+        clean_config_dir(&self.name)?;
+        Ok(())
     }
     pub async fn assign_floating_ip(&self, floating_ip: &str) -> Result<()> {
         self.server.assign_floating_ip(floating_ip).await
     }
 }
 
-pub fn get_server_ip(service_name: &str) -> Result<String, std::io::Error> {
+pub fn get_server_ip(service_name: &str) -> Result<String> {
     trace!("Looking up server IP from known_hosts file");
-    let mut fpath = std::path::PathBuf::from(make_config_dir(service_name));
+    let mut fpath = make_config_dir(service_name)?;
     fpath.push("known_hosts");
     let known_hosts = std::fs::read_to_string(&fpath)?;
     let host_parts: Vec<&str> = known_hosts.split(' ').collect();
@@ -244,19 +199,14 @@ pub fn get_server_ip(service_name: &str) -> Result<String, std::io::Error> {
     Ok(ip)
 }
 
-pub fn open_shell(service_name: &str) -> Result<(), std::io::Error> {
-    let mut client_key = std::path::PathBuf::from(make_config_dir(service_name));
+pub fn open_shell(service_name: &str) -> Result<()> {
+    let mut client_key = make_config_dir(service_name)?;
     client_key.push("client_id_ed25519");
-    let mut known_hosts = std::path::PathBuf::from(make_config_dir(service_name));
+    let mut known_hosts = make_config_dir(service_name)?;
     known_hosts.push("known_hosts");
     let mut known_hosts_opt = "UserKnownHostsFile=".to_owned();
     known_hosts_opt.push_str(known_hosts.to_str().unwrap());
-    let ipv4_address = match get_server_ip(service_name) {
-        Ok(ip) => ip,
-        Err(e) => {
-            return Err(e);
-        }
-    };
+    let ipv4_address = get_server_ip(service_name)?;
     let cmd_args = vec![
         "-l",
         "innisfree",
@@ -268,14 +218,11 @@ pub fn open_shell(service_name: &str) -> Result<(), std::io::Error> {
         "ConnectTimeout=5",
         &ipv4_address,
     ];
-    let status = std::process::Command::new("ssh").args(cmd_args).status();
-    match status {
-        Ok(_) => Ok(()),
-        Err(e) => {
-            error!("SSH interactive session failed: {}", e);
-            Err(e)
-        }
-    }
+    std::process::Command::new("ssh")
+        .args(cmd_args)
+        .status()
+        .context("SSH interactive session failed")?;
+    Ok(())
 }
 
 pub async fn run_proxy(

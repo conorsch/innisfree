@@ -31,7 +31,7 @@ impl SshKeypair {
     }
     // Store keypair on disk, in config dir
     pub fn write_locally(&self, service_name: &str) -> Result<String> {
-        let config_dir = make_config_dir(service_name);
+        let config_dir = make_config_dir(service_name)?;
         let key_name = self.filename();
         let privkey_filepath: String = Path::new(&config_dir)
             .join(key_name)
@@ -78,7 +78,7 @@ fn create_ssh_keypair(prefix: &str) -> Result<SshKeypair> {
         std::fs::remove_file(&privkey_filepath)?;
     }
 
-    let status = Command::new("ssh-keygen")
+    Command::new("ssh-keygen")
         .args([
             "-t",
             "ed25519",
@@ -90,13 +90,8 @@ fn create_ssh_keypair(prefix: &str) -> Result<SshKeypair> {
             "",
             "-q",
         ])
-        .status();
-    match status {
-        Ok(_) => {}
-        Err(e) => {
-            return Err(anyhow::Error::new(e).context("Failed to generate SSH keypair"));
-        }
-    }
+        .status()
+        .context("Failed to generate SSH keypair")?;
 
     let privkey = read_to_string(&privkey_filepath)?;
     let pubkey = read_to_string(&pubkey_filepath)?.trim().to_string();

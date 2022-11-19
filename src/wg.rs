@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use std::io::prelude::*;
 use std::net::IpAddr;
 use std::process::{Command, Stdio};
@@ -22,10 +22,7 @@ pub struct WireguardKeypair {
 
 impl WireguardKeypair {
     pub fn new() -> Result<WireguardKeypair> {
-        let privkey = match generate_wireguard_privkey() {
-            Ok(p) => p,
-            Err(_) => return Err(anyhow!("Failed to generate wireguard keypair")),
-        };
+        let privkey = generate_wireguard_privkey()?;
         let pubkey = derive_wireguard_pubkey(&privkey)?;
         Ok(WireguardKeypair {
             private: privkey,
@@ -76,7 +73,7 @@ impl WireguardDevice {
     }
 
     pub fn write_locally(&self, service_name: &str, services: &[ServicePort]) -> Result<()> {
-        let mut wg_config_path = std::path::PathBuf::from(make_config_dir(service_name));
+        let mut wg_config_path = make_config_dir(service_name)?;
         let wg_iface_name = format!("{}.conf", service_name);
         wg_config_path.push(wg_iface_name);
         let mut f = std::fs::File::create(&wg_config_path).unwrap();
@@ -155,7 +152,10 @@ fn generate_wireguard_privkey() -> Result<String> {
     // Call out to "wg genkey" and collect output.
     // Ideally we'd generate these values in pure Rust, but
     // calling out to wg as a first draft.
-    let privkey_cmd = std::process::Command::new("wg").args(["genkey"]).output()?;
+    let privkey_cmd = std::process::Command::new("wg")
+        .args(["genkey"])
+        .output()
+        .context("Failed to generate Wireguard keypair")?;
     let privkey: String = str::from_utf8(&privkey_cmd.stdout)
         .unwrap()
         .trim()

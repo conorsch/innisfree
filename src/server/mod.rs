@@ -6,7 +6,7 @@ use std::net::IpAddr;
 use std::thread;
 use std::time;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 
 // Web API request imports, see
 // https://rust-lang-nursery.github.io/rust-cookbook/web/clients/apis.html
@@ -171,13 +171,28 @@ impl Droplet {
         let ip: IpAddr = s.parse().unwrap();
         ip
     }
+
+    /// Calls the API to destroy a droplet.
     pub async fn destroy(&self) -> Result<()> {
         if let Some(k) = &self.ssh_pubkey {
             k.destroy().await?;
         } else {
             warn!("No API pubkey associated with droplet, not destroying");
         }
-        destroy_droplet(self).await?;
+
+        let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
+        let request_url = DO_API_BASE_URL.to_owned() + "/" + &self.id.to_string();
+
+        let client = reqwest::Client::new();
+        client
+            .delete(request_url)
+            .bearer_auth(api_key)
+            .send()
+            .await?
+            .error_for_status()
+            .context("Failed to destroy droplet")?;
+
+        debug!("Droplet destroyed");
         Ok(())
     }
 }
@@ -200,25 +215,4 @@ async fn get_droplet(droplet: &Droplet) -> Result<Droplet> {
     let mut d: Droplet = serde_json::from_str(&d_s)?;
     d.ssh_pubkey = droplet.ssh_pubkey.clone();
     Ok(d)
-}
-
-// Calls the API to destroy a droplet.
-async fn destroy_droplet(droplet: &Droplet) -> Result<()> {
-    let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
-    let request_url = DO_API_BASE_URL.to_owned() + "/" + &droplet.id.to_string();
-
-    let client = reqwest::Client::new();
-    let response = client
-        .delete(request_url)
-        .bearer_auth(api_key)
-        .send()
-        .await?
-        .error_for_status();
-    match response {
-        Ok(_r) => {
-            debug!("Droplet destroyed");
-            Ok(())
-        }
-        Err(e) => Err(anyhow!("Failed to destroy droplet: {}", e)),
-    }
 }
