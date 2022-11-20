@@ -1,14 +1,10 @@
+use crate::config::make_config_dir;
 use anyhow::{Context, Result};
-use std::fs::read_to_string;
+use osshkeys::cipher::Cipher;
+use osshkeys::keys::{KeyPair, KeyType};
+use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
-use std::process::Command;
-
-use std::io::Write;
-
-extern crate tempfile;
-
-use crate::config::make_config_dir;
 
 #[derive(Debug)]
 pub struct SshKeypair {
@@ -19,7 +15,14 @@ pub struct SshKeypair {
 
 impl SshKeypair {
     pub fn new(prefix: &str) -> Result<SshKeypair> {
-        create_ssh_keypair(prefix)
+        let kp = KeyPair::generate(KeyType::ED25519, 0)?;
+        let privkey = kp.serialize_openssh(None, Cipher::Null)?;
+        let pubkey = kp.serialize_publickey()?;
+        Ok(SshKeypair {
+            prefix: prefix.to_string(),
+            private: privkey,
+            public: pubkey,
+        })
     }
 
     // Builds predictable filename for use in writing
@@ -62,44 +65,6 @@ impl SshKeypair {
             .map_err(|e| anyhow::Error::new(e).context("Failed to write SSH pubkey"))?;
         Ok(privkey_filepath)
     }
-}
-
-fn create_ssh_keypair(prefix: &str) -> Result<SshKeypair> {
-    // Really clumsy with Path & PathBuf, so converting everything to Strings for now
-    let tmpfile = tempfile::NamedTempFile::new()?;
-    let tmpfile = tmpfile.path();
-    let privkey_filepath = String::from(tmpfile.to_str().unwrap());
-    let pubkey_filepath = String::from(&privkey_filepath) + ".pub";
-
-    // ssh-keygen won't clobber, requires interactive 'y' to confirm.
-    // so delete the file beforehand, then it'll create happily.
-    // tempfile will still be cleaned up when dropped
-    if Path::new(&privkey_filepath).exists() {
-        std::fs::remove_file(&privkey_filepath)?;
-    }
-
-    Command::new("ssh-keygen")
-        .args([
-            "-t",
-            "ed25519",
-            "-P",
-            "",
-            "-f",
-            &privkey_filepath,
-            "-C",
-            "",
-            "-q",
-        ])
-        .status()
-        .context("Failed to generate SSH keypair")?;
-
-    let privkey = read_to_string(&privkey_filepath)?;
-    let pubkey = read_to_string(&pubkey_filepath)?.trim().to_string();
-    Ok(SshKeypair {
-        prefix: prefix.to_string(),
-        private: privkey,
-        public: pubkey,
-    })
 }
 
 #[cfg(test)]
