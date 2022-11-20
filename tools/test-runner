@@ -54,5 +54,6 @@ else
     result=0
 fi
 
+cleanup
 wait
 exit "$result"

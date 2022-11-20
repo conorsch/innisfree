@@ -19,7 +19,12 @@ mod server;
 mod ssh;
 mod wg;
 
+use config::clean_name;
+
 #[tokio::main]
+/// Runs the `innisfree` CLI. Pass arguments to configure
+/// local services that should be exposed remotely.
+/// Pass `--help` for information.
 async fn main() -> Result<()> {
     // Activate env_logger https://github.com/env-logger-rs/env_logger
     // The `Env` lets us tweak what the environment
@@ -123,7 +128,7 @@ async fn main() -> Result<()> {
         let dest_ip: IpAddr = matches.value_of("dest-ip").unwrap().parse().unwrap();
         let port_spec = matches.value_of("ports").unwrap();
         let floating_ip = matches.value_of("floating-ip").unwrap();
-        let tunnel_name = config::clean_name(matches.value_of("name").unwrap());
+        let tunnel_name = clean_name(matches.value_of("name").unwrap());
         let services = config::ServicePort::from_str_multi(port_spec)?;
         info!("Will provide proxies for {:?}", services);
 
@@ -173,12 +178,12 @@ async fn main() -> Result<()> {
             mgr.block().await?;
         }
     } else if let Some(matches) = matches.subcommand_matches("ssh") {
-        let tunnel_name = config::clean_name(matches.value_of("name").unwrap());
+        let tunnel_name = clean_name(matches.value_of("name").unwrap());
         manager::open_shell(&tunnel_name).context(
             "Server not found. Try running 'innisfree up' first, or pass --name=<service>",
         )?;
     } else if let Some(matches) = matches.subcommand_matches("ip") {
-        let tunnel_name = config::clean_name(matches.value_of("name").unwrap());
+        let tunnel_name = clean_name(matches.value_of("name").unwrap());
         let ip = manager::get_server_ip(&tunnel_name).context(
             "Server not found. Try running 'innisfree up' first, or pass --name=<service>.",
         )?;

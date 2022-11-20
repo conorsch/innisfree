@@ -1,3 +1,10 @@
+//! Core network proxy logic, for passing
+//! traffic between TCP sockets. Right now, only TCP is supported,
+//! but UDP support would be dope.
+//!
+//! The methods exposed here are low-level. More user-friendly abstractions
+//! can be found in the [crate::manager::InnisfreeManager] class..
+
 use anyhow::Result;
 use futures::FutureExt;
 use tokio::io::AsyncWriteExt;
@@ -5,6 +12,8 @@ use tokio::net::TcpStream;
 
 // Taken from Tokio proxy example (MIT license):
 // https://github.com/tokio-rs/tokio/blob/a08ce0d3e06d650361283dc87c8fe14b146df15d/examples/proxy.rs
+/// Handle proxying traffic along a given `TcpStream` to a given
+/// destination socket.
 pub async fn transfer(mut inbound: TcpStream, proxy_addr: String) -> Result<()> {
     let mut outbound = TcpStream::connect(proxy_addr).await?;
 
@@ -26,6 +35,8 @@ pub async fn transfer(mut inbound: TcpStream, proxy_addr: String) -> Result<()> 
     Ok(())
 }
 
+/// Create a blocking service proxy that passes TCP traffic
+/// between two sockets.
 pub async fn proxy_handler(listen_addr: String, dest_addr: String) -> Result<()> {
     debug!("Proxying traffic: {} -> {}", listen_addr, dest_addr);
     let listener = tokio::net::TcpListener::bind(&listen_addr).await?;

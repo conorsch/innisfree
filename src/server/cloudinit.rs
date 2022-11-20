@@ -1,5 +1,5 @@
-// Stores business logic around creating the "cloud-init.cfg" YAML file,
-// used to customize a server on first boot.
+//! Stores business logic around creating the "cloud-init.cfg" YAML file,
+//! used to customize a server on first boot.
 use std::net::IpAddr;
 
 use anyhow::{Context, Result};
@@ -7,11 +7,15 @@ extern crate serde;
 use serde::{Deserialize, Serialize};
 
 use crate::config::ServicePort;
-use crate::server::ssh_key::get_all_keys;
+// TODO the ssh key impl should be provider agnostic
+use crate::server::digitalocean::ssh_key::get_all_keys;
 use crate::ssh::SshKeypair;
 use crate::wg::WireguardManager;
 
 #[derive(Debug, Serialize, Deserialize)]
+/// Representation of a cloudinit YAML file.
+/// Support serialization so it can be rendered as a string
+/// as part of cloud API calls.
 pub struct CloudConfig {
     users: Vec<CloudConfigUser>,
     package_update: bool,
@@ -22,6 +26,8 @@ pub struct CloudConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+/// Represents a ``write_file`` within the `CloudConfig`.
+/// See documentation at <https://cloudinit.readthedocs.io/en/latest/topics/modules.html#write-files>.
 pub struct CloudConfigFile {
     content: String,
     owner: String,
@@ -30,6 +36,8 @@ pub struct CloudConfigFile {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+/// Represents a ``user`` within the `CloudConfig`.
+/// See documentation at <https://cloudinit.readthedocs.io/en/latest/topics/modules.html#users-and-groups>.
 pub struct CloudConfigUser {
     name: String,
     groups: Vec<String>,
@@ -38,6 +46,7 @@ pub struct CloudConfigUser {
     ssh_authorized_keys: Vec<String>,
 }
 
+/// Returns a string representation of a cloudinit YAML file.
 pub async fn generate_user_data(
     ssh_client_keypair: &SshKeypair,
     ssh_server_keypair: &SshKeypair,
@@ -100,6 +109,10 @@ pub async fn generate_user_data(
     Ok(cc)
 }
 
+/// Generates an nginx stream configuration file as a string,
+/// for use configuring the remote server's nginx proxy.
+// TODO consider using caddy for this. Ideally we'd terminate
+// TLS locally, but it'd sure be convenient.
 fn nginx_streams(services: &[ServicePort], dest_ip: IpAddr) -> Result<String> {
     let nginx_config = include_str!("../../files/stream.conf.j2");
     let mut context = tera::Context::new();

@@ -1,20 +1,27 @@
-extern crate home;
+//! Storage logic, to persist configuration of remote tunnels locally.
+//! Includes methods for creating and destroying configuration directories.
 
 use anyhow::Result;
+
 use serde::Serialize;
 use std::convert::TryFrom;
 use std::path::PathBuf;
 
-// Describes a request for a port to expose.
+/// Describes a socket expectation for a given service.
+/// The port will be reused to listen locally and forward remotely.
 // Will be passed around to nginx and wireguard configuration logic
 // to build out the tunnel.
 #[derive(Debug, Clone, Serialize)]
 pub struct ServicePort {
+    /// Port number for the service.
     pub port: i32,
+    /// Protocol, one of TCP or UDP.
     pub protocol: String,
 }
 
 impl ServicePort {
+    /// Parse a comma-separated string of ServicePort specs,
+    /// e.g. `8080/TCP,4444/UDP`.
     pub fn from_str_multi(port_spec: &str) -> Result<Vec<ServicePort>> {
         Ok(port_spec
             .split(',')
@@ -23,6 +30,7 @@ impl ServicePort {
     }
 }
 
+/// We implement `TryFrom<&str>` so we can parse CLI args.
 impl TryFrom<&str> for ServicePort {
     type Error = anyhow::Error;
 
@@ -47,6 +55,8 @@ impl TryFrom<&str> for ServicePort {
     }
 }
 
+/// Create local config dir, e.g. ~/.config/innisfree/,
+/// for storing state of active tunnels.
 pub fn make_config_dir(service_name: &str) -> Result<PathBuf> {
     let mut config_dir = home::home_dir().unwrap();
     config_dir.push(".config");
@@ -56,6 +66,9 @@ pub fn make_config_dir(service_name: &str) -> Result<PathBuf> {
     Ok(config_dir)
 }
 
+/// Remove config dir and all contents.
+/// Will render active tunnels unconfigurable,
+/// and subject to manual cleanup.
 pub fn clean_config_dir(service_name: &str) -> Result<()> {
     let config_dir = make_config_dir(service_name)?;
     for f in std::fs::read_dir(&config_dir)? {

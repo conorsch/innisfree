@@ -1,3 +1,7 @@
+//! Functions for managing Wireguard connections.
+//! Includes methods for generating keypairs ([`WireguardKeypair::new`]),
+//! for configuring interfaces ([WireguardHost]),
+
 use anyhow::{Context, Result};
 use std::io::prelude::*;
 use std::net::IpAddr;
@@ -6,21 +10,22 @@ use std::str;
 
 use crate::config::{make_config_dir, ServicePort};
 use crate::net::generate_unused_subnet;
-
-extern crate tera;
-
-extern crate serde;
 use serde::Serialize;
 
 const WIREGUARD_LISTEN_PORT: i32 = 51820;
 
 #[derive(Debug, Serialize, Clone)]
+/// Contains the public and private key material
+/// for a Wireguard ED25519 keypair.
 pub struct WireguardKeypair {
+    /// Private key material.
     private: String,
+    /// Public key material.
     public: String,
 }
 
 impl WireguardKeypair {
+    /// Generate a new ED25519 keypair for use as a Wireguard identity.
     pub fn new() -> Result<WireguardKeypair> {
         let privkey = generate_wireguard_privkey()?;
         let pubkey = derive_wireguard_pubkey(&privkey)?;
@@ -32,23 +37,42 @@ impl WireguardKeypair {
 }
 
 #[derive(Debug, Serialize, Clone)]
+/// Represents a Wireguard that can be peered with.
 pub struct WireguardHost {
+    /// Human-readable name for peer on the Wireguard network.
     pub name: String,
+    /// IP address within the Wireguard network for exclusive use by this host.
     pub address: IpAddr,
+    /// Publicly accessible IP address to allow peers to connect over Wireguard.
+    /// Optional, because only the remote host will have an Endpoint.
     pub endpoint: Option<IpAddr>,
+    /// The UDP port on which Wireguard will listen for incoming peer traffic.
+    /// This port is not related to [crate::config::ServicePort].
     pub listenport: i32,
+    /// An ED25519 keypair defining the identity of this [WireguardHost].
+    /// Its public key will be referred to in peers' configs, and its private
+    /// key will be used to initialize the interface.
     pub keypair: WireguardKeypair,
 }
 
 #[derive(Debug, Serialize, Clone)]
+/// Represents a network device for handling Wireguard traffic.
+/// Must include remote and local identities in the form of `WireguardHost`.
 pub struct WireguardDevice {
+    /// Human-readable name for this device.
     pub name: String,
+    /// Representation of localhost as a [WireguardHost].
     pub interface: WireguardHost,
+    /// Representation of remote peer as a [WireguardHost].
     pub peer: WireguardHost,
 }
 
 impl WireguardDevice {
-    // Returns contents of an INI config file for WG, e.g. 'wg0.conf' in docs.
+    /// Returns contents of an INI config file for Wireguard.
+    /// This file constitutes the entirety of the Wireguard interface configuration,
+    /// for use with `wg-quick`, and is usually referred to in Wireguard documentation
+    /// as `wg0.conf`. In our case, on disk it is usually called `innisfree.conf`.
+    /// In practice, this config file is used by the local end of the Innisfree tunnel.
     pub fn config(&self) -> Result<String> {
         let wg_template = include_str!("../files/wg0.conf.j2");
         let mut context = tera::Context::new();
@@ -62,6 +86,9 @@ impl WireguardDevice {
             .context("Failed to write wireguard config")
     }
 
+    /// Returns a specially formed Wireguard INI config file,
+    /// that includes firewall rules restrictions for the services
+    /// being proxied.
     pub fn config_with_services(&self, services: &[ServicePort]) -> Result<String> {
         let wg_template = include_str!("../files/wg0.conf.j2");
         let mut context = tera::Context::new();
@@ -72,6 +99,8 @@ impl WireguardDevice {
             .context("Failed to write wireguard config for multiple services")
     }
 
+    /// Save the config file to disk, within the configuration directory for project state.
+    /// This method is only appropriate for the local end of the Innisfree tunnel.
     pub fn write_locally(&self, service_name: &str, services: &[ServicePort]) -> Result<()> {
         let mut wg_config_path = make_config_dir(service_name)?;
         let wg_iface_name = format!("{}.conf", service_name);
@@ -84,19 +113,27 @@ impl WireguardDevice {
 }
 
 #[derive(Debug, Clone)]
+/// Controller class for creating both ends of a Wireguard tunnel.
+/// Generates keypairs for local and remote interfaces.
+/// Generates configuration files for both interfaces.
 pub struct WireguardManager {
+    /// IP address of the local Wireguard interface.
     pub wg_local_ip: IpAddr,
     // wg_local_name: String,
     // wg_local_host: WireguardHost,
+    /// Wireguard configuration for local interface.
     pub wg_local_device: WireguardDevice,
 
+    /// IP address of the remote Wireguard interface.
     pub wg_remote_ip: IpAddr,
     // wg_remote_name: String,
     // wg_remote_host: WireguardHost,
+    /// Wireguard configuration for remote interface.
     pub wg_remote_device: WireguardDevice,
 }
 
 impl WireguardManager {
+    /// Create a new controller class, based on `service_name`.
     pub fn new(service_name: &str) -> Result<WireguardManager> {
         let wg_subnet = generate_unused_subnet()?;
         let s = wg_subnet.hosts().collect::<Vec<IpAddr>>();
@@ -148,6 +185,7 @@ impl WireguardManager {
     }
 }
 
+/// Create a new ED25519 private key via ``wg genkey``.
 fn generate_wireguard_privkey() -> Result<String> {
     // Call out to "wg genkey" and collect output.
     // Ideally we'd generate these values in pure Rust, but
@@ -163,6 +201,8 @@ fn generate_wireguard_privkey() -> Result<String> {
     Ok(privkey)
 }
 
+/// Return an ED25519 public key from an ED25519 private key,
+/// via ``wg pubkey``.
 fn derive_wireguard_pubkey(privkey: &str) -> Result<String> {
     // Open a pipe to 'wg genkey', to pass in the privkey
     let pubkey_cmd = Command::new("wg")

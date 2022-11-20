@@ -1,9 +1,15 @@
+//! Utility functions for looking up available
+//! IP ranges for establishing the Wireguard interface.
+
 use anyhow::{anyhow, Result};
 use ipnet::IpNet;
 use std::net::IpAddr;
-// Cutting corners here. IP addresses should be customizable,
-// but we'll default to a /28, and generate deterministically
-// within that range based on service name.
+/// Network subnet range for doling out IP addresses for the Innisfree tunnels.
+/// Each instance of innisfree, regardless of the number of [crate::config::ServicePort]s
+/// in play, requires a `/30` subnet, that is, two (2) unique IP addresses.
+/// We set a `/28` as a the parent range, in case some of those available
+/// IPs are already claimed, whether by a different instance of innisfree,
+/// or something else entirely.
 pub const INNISFREE_SUBNET: &str = "10.50.0.1/28";
 
 /// Checks whether IpAddr exists on local system, whether

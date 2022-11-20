@@ -1,3 +1,6 @@
+//! High-level controller logic for managing
+//! service proxies, i.e. [InnisfreeManager].
+
 use crate::config::{clean_config_dir, make_config_dir, ServicePort};
 use crate::proxy::proxy_handler;
 use crate::server::InnisfreeServer;
@@ -9,15 +12,24 @@ use std::path::PathBuf;
 use tokio::signal;
 
 #[derive(Debug)]
+/// Controller class for handling tunnel configurations.
+/// Handles the soup-to-nuts configuration, including server creation,
+/// WireGuard device config, and proxy.
 pub struct InnisfreeManager {
+    /// List of `ServicePort`s to configure.
     pub services: Vec<ServicePort>,
     // dest_ip: IpAddr,
+    /// Remote server handling public ingress.
     pub server: InnisfreeServer,
+    /// Human-readable name for this service manager.
     pub name: String,
+    /// Controller for Wireguard tunnels.
     pub wg: WireguardManager,
 }
 
 impl InnisfreeManager {
+    /// Create a new controller for managing a collection of services.
+    /// Call `up()` to build.
     pub async fn new(tunnel_name: &str, services: Vec<ServicePort>) -> Result<InnisfreeManager> {
         clean_config_dir(tunnel_name)?;
         let wg = WireguardManager::new(tunnel_name)?;
@@ -30,6 +42,9 @@ impl InnisfreeManager {
             wg,
         })
     }
+    /// Create remote and local infrastructure. Creates a cloud server,
+    /// configures it to forward public ports over its Wireguard interface,
+    /// to a local Wireguard interface
     pub fn up(&self) -> Result<()> {
         self.wait_for_ssh();
         debug!("Configuring remote proxy and opening tunnel...");
@@ -47,10 +62,12 @@ impl InnisfreeManager {
         trace!("Testing connection");
         self.test_connection()
     }
+    /// Blocks until the server's cloudinit process reports completion.
     fn wait_for_cloudinit(&self) -> Result<()> {
         let cmd: Vec<&str> = vec!["cloud-init", "status", "--long", "--wait"];
         self.run_ssh_cmd(cmd)
     }
+    /// Blocks until 22/TCP is available on the server.
     fn wait_for_ssh(&self) {
         let dest_ip = SocketAddr::new(self.server.ipv4_address(), 22);
         loop {
@@ -84,6 +101,8 @@ impl InnisfreeManager {
             }
         }
     }
+    /// Ping remote remote Wireguard IP from local Wireguard device.
+    /// Ensures connectivity is established between remote and local interfaces.
     fn test_connection(&self) -> Result<()> {
         trace!("Inside test connection, setting up vars");
         let ip = &self.wg.wg_remote_ip;
@@ -99,15 +118,18 @@ impl InnisfreeManager {
         debug!("Confirmed tunnel is established, able to ping across it");
         Ok(())
     }
-    pub fn config_dir(&self) -> Result<PathBuf> {
+    /// Returns `PathBuf`, creating directory if necessary.
+    fn config_dir(&self) -> Result<PathBuf> {
         make_config_dir(&self.name)
     }
-    pub fn bring_up_remote_wg(&self) -> Result<()> {
+    /// Runs `wg-quick up` on remote server to bring up its Wireguard interface.
+    fn bring_up_remote_wg(&self) -> Result<()> {
         let cmd = vec!["wg-quick", "up", "/tmp/innisfree.conf"];
         trace!("Activating remote wg interface");
         self.run_ssh_cmd(cmd)
     }
-    pub fn bring_up_local_wg(&self) -> Result<()> {
+    /// Runs `wg-quick up` on localhost to bring up local Wireguard interface.
+    fn bring_up_local_wg(&self) -> Result<()> {
         trace!("Bringing up local wg conn");
         // Bring down in case the config was running with a different host
         let _down = self.bring_down_local_wg();
@@ -124,7 +146,8 @@ impl InnisfreeManager {
             .status()?;
         Ok(())
     }
-    pub fn bring_down_local_wg(&self) -> Result<()> {
+    /// Run `wg-quick down` on localhost to destroy local Wireguard interface.
+    fn bring_down_local_wg(&self) -> Result<()> {
         let cmd = "wg-quick";
         let mut fpath = make_config_dir(&self.name)?;
         fpath.push(format!("{}.conf", &self.name));
@@ -137,7 +160,10 @@ impl InnisfreeManager {
             .context("Failed to remove local Wireguard interface")?;
         Ok(())
     }
-    pub fn known_hosts(&self) -> Result<String> {
+    /// Generates an SSH known_hosts file, containing the automatically
+    /// generated SSH hostkey for the remote server. Doing so allows
+    /// us to verify the SSH connection on first use.
+    fn known_hosts(&self) -> Result<String> {
         let ipv4_address = &self.server.ipv4_address();
         let server_host_key = &self.server.ssh_server_keypair.public;
         let mut host_line = ipv4_address.to_string();
@@ -149,7 +175,8 @@ impl InnisfreeManager {
         std::fs::write(fpath.to_str().unwrap(), host_line).expect("Failed to create known_hosts");
         Ok(fpath.to_str().unwrap().to_string())
     }
-    pub fn run_ssh_cmd(&self, cmd: Vec<&str>) -> Result<()> {
+    /// Execute a shell command on the remote server.
+    fn run_ssh_cmd(&self, cmd: Vec<&str>) -> Result<()> {
         trace!("Entering run_ssh_cmd");
         let ssh_kp = &self.server.ssh_client_keypair.write_locally(&self.name)?;
         let known_hosts = &self.known_hosts()?;
@@ -176,6 +203,8 @@ impl InnisfreeManager {
             .context("SSH command failed")?;
         Ok(())
     }
+    /// Destroys all infrastructure, including local Wireguard interfaces,
+    /// remote server, and local config dir.
     pub async fn clean(&self) -> Result<()> {
         debug!("Removing local Wireguard interface");
         // Ignore errors, since we want to try all handlers
@@ -184,11 +213,17 @@ impl InnisfreeManager {
         clean_config_dir(&self.name)?;
         Ok(())
     }
+    /// Attaches a reserved IP address to remote server. Makes it easier
+    /// to use DNS, which can be updated once to point to the reusable IP address.
     pub async fn assign_floating_ip(&self, floating_ip: &str) -> Result<()> {
         self.server.assign_floating_ip(floating_ip).await
     }
 }
 
+/// Look up IPv4 address for remote server. Accepts a service name,
+/// so that `innisfree ip` on the CLI can return an answer by inspecting
+/// the on-disk config for an instance running in a separate process.
+// TODO: store ip in config file locally
 pub fn get_server_ip(service_name: &str) -> Result<String> {
     trace!("Looking up server IP from known_hosts file");
     let mut fpath = make_config_dir(service_name)?;
@@ -199,6 +234,7 @@ pub fn get_server_ip(service_name: &str) -> Result<String> {
     Ok(ip)
 }
 
+/// Create an interface SSH session on remote server.
 pub fn open_shell(service_name: &str) -> Result<()> {
     let mut client_key = make_config_dir(service_name)?;
     client_key.push("client_id_ed25519");
@@ -225,6 +261,8 @@ pub fn open_shell(service_name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Spin up local network proxy to handle passing traffic
+/// between the local service(s) and the remote server.
 pub async fn run_proxy(
     local_ip: IpAddr,
     dest_ip: IpAddr,
