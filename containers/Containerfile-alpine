@@ -1,0 +1,19 @@
+# not yet working; the openssl crate fails to build from source
+FROM alpine
+RUN apk add \
+    curl \
+    git
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+RUN apk add \
+    gcc \
+    musl-dev \
+    openssl \
+    openssl-dev \
+    pkgconfig
+
+COPY . /app
+WORKDIR /app
+RUN . ~/.cargo/env && cargo fetch
+RUN . ~/.cargo/env && cargo build --release

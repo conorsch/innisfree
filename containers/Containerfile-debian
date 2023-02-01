@@ -1,0 +1,13 @@
+FROM debian:bullseye AS builder
+RUN apt-get update && apt-get install -y \
+    curl \
+    git
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+RUN apt-get install -y \
+    clang build-essential
+
+COPY . /app
+WORKDIR /app
+RUN . ~/.cargo/env && cargo build --release

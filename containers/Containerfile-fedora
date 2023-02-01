@@ -1,0 +1,15 @@
+FROM fedora:latest AS builder
+RUN dnf install -y \
+    curl \
+    git
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+RUN dnf install -y \
+    clang-devel \
+    perl-FindBin \
+    perl-File-Compare
+
+COPY . /app
+WORKDIR /app
+RUN . ~/.cargo/env && cargo build --release
