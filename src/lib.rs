@@ -8,7 +8,6 @@
 //! As for cloud providers, only DigitalOcean is supported,
 //! but adding others should be fairly straightforward.
 
-
 #![warn(missing_docs)]
 #[macro_use]
 extern crate log;

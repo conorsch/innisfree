@@ -215,7 +215,7 @@ impl InnisfreeManager {
     }
     /// Attaches a reserved IP address to remote server. Makes it easier
     /// to use DNS, which can be updated once to point to the reusable IP address.
-    pub async fn assign_floating_ip(&self, floating_ip: &str) -> Result<()> {
+    pub async fn assign_floating_ip(&self, floating_ip: IpAddr) -> Result<()> {
         self.server.assign_floating_ip(floating_ip).await
     }
 }

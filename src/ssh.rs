@@ -75,7 +75,7 @@ impl SshKeypair {
 
         // Pubkey is public, so default umask is fine, expecting 644 or so.
         let pubkey_filepath = String::from(&privkey_filepath) + ".pub";
-        std::fs::write(&pubkey_filepath, &self.public)
+        std::fs::write(pubkey_filepath, &self.public)
             .map_err(|e| anyhow::Error::new(e).context("Failed to write SSH pubkey"))?;
         Ok(privkey_filepath)
     }

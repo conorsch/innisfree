@@ -29,7 +29,7 @@ trap 'cleanup' EXIT
 # We don't use 'cargo run' because we want SIGINT to tear down the process.
 # Wrapping innisfree in 'cargo run' may interfere with signal handling.
 cargo build
-./target/x86_64-unknown-linux-musl/debug/innisfree up -p "$local_port" &
+./target/debug/innisfree up -p "$local_port" &
 sleep 90
 
 # Host webroot containing test string

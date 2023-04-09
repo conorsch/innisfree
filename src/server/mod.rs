@@ -69,10 +69,9 @@ impl InnisfreeServer {
     /// Attaches a reserved IP to the remote server. Makes it easier
     /// to use DNS, since the record needs to be updated only once,
     /// and the IP address can be reused repeatedly on multiple hosts after that.
-    pub async fn assign_floating_ip(&self, floating_ip: &str) -> Result<()> {
-        let fip: IpAddr = floating_ip.parse()?;
+    pub async fn assign_floating_ip(&self, floating_ip: IpAddr) -> Result<()> {
         let f = FloatingIp {
-            ip: fip,
+            ip: floating_ip,
             droplet_id: self.droplet.id,
         };
         f.assign().await

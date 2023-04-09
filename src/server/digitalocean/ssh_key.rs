@@ -11,7 +11,7 @@ const DO_API_BASE_URL: &str = "https://api.digitalocean.com/v2";
 
 #[derive(Clone, Debug, Deserialize)]
 /// Representation of an SSH public key, as defined by the DigitalOcean API.
-/// For more information, see 
+/// For more information, see
 /// <https://docs.digitalocean.com/reference/api/api-reference/#tag/SSH-Keys>.
 pub struct DigitalOceanSshKey {
     /// Public key material, in ED25519 format, for the SSH keypair.

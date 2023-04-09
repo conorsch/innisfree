@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
-use clap::Arg;
-use clap::{crate_version, App};
+use clap::{crate_version, Parser, Subcommand};
+use config::clean_name;
 use std::env;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -19,7 +19,77 @@ mod server;
 mod ssh;
 mod wg;
 
-use config::clean_name;
+#[derive(Debug, Parser)]
+#[clap(
+    name = "innisfree",
+    about = "Exposes local services on a public IPv4 address, via a cloud server.",
+    version = crate_version!(),
+)]
+struct Args {
+    /// Create new innisfree tunnel
+    #[clap(subcommand)]
+    cmd: RootCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum RootCommand {
+    /// Exposes local services on a public IPv4 address, via a cloud server
+    Up {
+        /// Title for the service, used for cloud node and systemd service
+        #[clap(default_value = "innisfree", long, short, env = "INNISFREE_NAME")]
+        name: String,
+
+        /// List of service ports to forward, comma-separated")
+        #[clap(
+            default_value = "8080/TCP,443/TCP",
+            env = "INNISFREE_PORTS",
+            long,
+            short
+        )]
+        ports: String,
+
+        /// IPv4 Address of proxy destination, whither traffic is forwarded
+        #[clap(default_value = "127.0.0.1", env = "INNISFREE_DEST_IP", long, short)]
+        dest_ip: IpAddr,
+
+        /// Declare pre-existing Floating IP to attach to Droplet"
+        #[clap(env = "INNISFREE_FLOATING_IP", long, short)]
+        floating_ip: Option<IpAddr>,
+    },
+
+    /// Open interactive SSH shell on cloud node
+    Ssh {
+        /// Title for the service, used for cloud node and systemd service
+        #[clap(default_value = "innisfree", env = "INNISFREE_NAME", long, short)]
+        name: String,
+    },
+
+    /// Display IPv4 address for cloud node
+    Ip {
+        /// Title for the service, used for cloud node and systemd service
+        #[clap(default_value = "innisfree", env = "INNISFREE_NAME", long, short)]
+        name: String,
+    },
+
+    /// Run checks to evaluate platform support
+    Doctor {},
+
+    /// Start process to forward traffic, assumes tunnel already up
+    Proxy {
+        /// List of service ports to forward, comma-separated")
+        #[clap(
+            default_value = "8080/TCP,443/TCP",
+            env = "INNISFREE_PORTS",
+            long,
+            short
+        )]
+        ports: String,
+
+        /// IPv4 Address of proxy destination, whither traffic is forwarded
+        #[clap(default_value = "127.0.0.1", env = "INNISFREE_DEST_IP", long, short)]
+        dest_ip: IpAddr,
+    },
+}
 
 #[tokio::main]
 /// Runs the `innisfree` CLI. Pass arguments to configure
@@ -32,178 +102,107 @@ async fn main() -> Result<()> {
     // value is if they're missing
     let env = Env::default().filter_or("RUST_LOG", "debug,reqwest=info");
     env_logger::init_from_env(env);
-    let matches = App::new("Innisfree")
-        .version(crate_version!())
-        .about("Exposes local services on a public IPv4 address, via a cloud server.")
-        .subcommand(
-            App::new("up")
-                .about("Create new innisfree tunnel")
-                .arg(
-                    Arg::new("name")
-                        .about("title for the service, used for cloud node and systemd service")
-                        .default_value("innisfree")
-                        .env("INNISFREE_NAME")
-                        .long("name")
-                        .short('n'),
-                )
-                .arg(
-                    Arg::new("ports")
-                        .about("list of service ports to forward, comma-separated")
-                        .default_value("8080/TCP,443/TCP")
-                        .env("INNISFREE_PORTS")
-                        .long("ports")
-                        .short('p'),
-                )
-                .arg(
-                    Arg::new("dest-ip")
-                        .about("IPv4 Address of proxy destination, whither traffic is forwarded")
-                        .default_value("127.0.0.1")
-                        .env("INNISFREE_DEST_IP")
-                        .long("dest-ip")
-                        .short('d'),
-                )
-                .arg(
-                    Arg::new("floating-ip")
-                        .about("Declare pre-existing Floating IP to attach to Droplet")
-                        // Figure out how to default to an empty string
-                        .default_value("None")
-                        .env("INNISFREE_FLOATING_IP")
-                        .long("floating-ip")
-                        .short('f'),
-                ),
-        )
-        .subcommand(
-            App::new("ssh")
-                .about("Open interactive SSH shell on cloud node")
-                .arg(
-                    Arg::new("name")
-                        .about("title for the service, used for cloud node and systemd service")
-                        .default_value("innisfree")
-                        .env("INNISFREE_NAME")
-                        .long("name")
-                        .short('n'),
-                ),
-        )
-        .subcommand(
-            App::new("ip")
-                .about("Display IPv4 address for cloud node")
-                .arg(
-                    Arg::new("name")
-                        .about("title for the service, used for cloud node and systemd service")
-                        .default_value("innisfree")
-                        .env("INNISFREE_NAME")
-                        .long("name")
-                        .short('n'),
-                ),
-        )
-        .subcommand(App::new("doctor").about("Run checks to evaluate platform support"))
-        .subcommand(
-            App::new("proxy")
-                .about("Start process to forward traffic, assumes tunnel already up")
-                .arg(
-                    Arg::new("ports")
-                        .about("list of service ports to forward, comma-separated")
-                        .default_value("8080/TCP,443/TCP")
-                        .env("INNISFREE_PORTS")
-                        .long("ports")
-                        .short('p'),
-                )
-                .arg(
-                    Arg::new("dest-ip")
-                        .about("IPv4 Address of proxy destination, whither traffic is forwarded")
-                        .default_value("127.0.0.1")
-                        .env("INNISFREE_DEST_IP")
-                        .long("dest-ip")
-                        .short('d'),
-                ),
-        )
-        .get_matches();
-
+    let args = Args::parse();
     // Primary subcommand. Soup to nuts experience.
-    if let Some(matches) = matches.subcommand_matches("up") {
-        // Ensure DigitalOcean API token is defined
-        let _do_token =
-            env::var("DIGITALOCEAN_API_TOKEN").context("DIGITALOCEAN_API_TOKEN env var not set");
+    match args.cmd {
+        RootCommand::Up {
+            name,
+            ports,
+            dest_ip,
+            floating_ip,
+        } => {
+            // Ensure DigitalOcean API token is defined
+            let _do_token = env::var("DIGITALOCEAN_API_TOKEN")
+                .context("DIGITALOCEAN_API_TOKEN env var not set");
+            let services = config::ServicePort::from_str_multi(&ports)?;
+            info!("Will provide proxies for {:?}", services);
+            let name = clean_name(&name);
 
-        let dest_ip: IpAddr = matches.value_of("dest-ip").unwrap().parse().unwrap();
-        let port_spec = matches.value_of("ports").unwrap();
-        let floating_ip = matches.value_of("floating-ip").unwrap();
-        let tunnel_name = clean_name(matches.value_of("name").unwrap());
-        let services = config::ServicePort::from_str_multi(port_spec)?;
-        info!("Will provide proxies for {:?}", services);
-
-        info!("Creating server '{}'", &tunnel_name);
-        let mgr = manager::InnisfreeManager::new(&tunnel_name, services).await?;
-        let mgr = Arc::new(mgr);
-        info!("Configuring server");
-        match mgr.up() {
-            Ok(_) => {
-                trace!("Up reports success");
+            info!("Creating server '{}'", &name);
+            let mgr = manager::InnisfreeManager::new(&name, services).await?;
+            let mgr = Arc::new(mgr);
+            info!("Configuring server");
+            match mgr.up() {
+                Ok(_) => {
+                    trace!("Up reports success");
+                }
+                Err(e) => {
+                    error!("Failed bringing up tunnel: {}", e);
+                    // Error probably unrecoverable
+                    warn!("Attempting to exit gracefully...");
+                    mgr.clean().await?;
+                    std::process::exit(2);
+                }
             }
-            Err(e) => {
-                error!("Failed bringing up tunnel: {}", e);
-                // Error probably unrecoverable
-                warn!("Attempting to exit gracefully...");
-                mgr.clean().await?;
-                std::process::exit(2);
+            // Really need a better default case for floating-ip
+            match floating_ip {
+                Some(f) => {
+                    debug!("Configuring floating IP...");
+                    mgr.assign_floating_ip(f).await?;
+                    info!("Server ready! IPv4 address: {}", f);
+                }
+                None => {
+                    let ip = &mgr.server.ipv4_address();
+                    info!("Server ready! IPv4 address: {}", ip);
+                }
+            }
+            if name == "innisfree" {
+                debug!("Try logging in with 'innisfree ssh'");
+            } else {
+                debug!("Try logging in with 'innisfree ssh -n {}'", name);
+            }
+            let local_ip: IpAddr = mgr.wg.wg_local_device.interface.address;
+            if &dest_ip.to_string() != "127.0.0.1" {
+                tokio::spawn(manager::run_proxy(local_ip, dest_ip, mgr.services.clone()));
+                mgr.block().await?;
+            } else {
+                info!(
+                    "Ready to listen on {}. Start local services. Make sure to bind to {}, rather than 127.0.0.1!",
+                    ports,
+                    mgr.wg.wg_local_ip,
+                );
+                debug!(
+                    "Blocking forever. Press ctrl+c to tear down the tunnel and destroy server."
+                );
+                // Block forever, ctrl+c will interrupt
+                mgr.block().await?;
             }
         }
+        RootCommand::Ssh { name } => {
+            let name = clean_name(&name);
+            manager::open_shell(&name).context(
+                "Server not found. Try running 'innisfree up' first, or pass --name=<service>",
+            )?;
+        }
 
-        // Really need a better default case for floating-ip
-        if floating_ip != "None" {
-            debug!("Configuring floating IP...");
-            mgr.assign_floating_ip(floating_ip).await?;
-            info!("Server ready! IPv4 address: {}", floating_ip);
-        } else {
-            let ip = &mgr.server.ipv4_address();
-            info!("Server ready! IPv4 address: {}", ip);
+        RootCommand::Ip { name } => {
+            let name = clean_name(&name);
+            let ip = manager::get_server_ip(&name).context(
+                "Server not found. Try running 'innisfree up' first, or pass --name=<service>.",
+            )?;
+            println!("{}", ip);
         }
-        if tunnel_name == "innisfree" {
-            debug!("Try logging in with 'innisfree ssh'");
-        } else {
-            debug!("Try logging in with 'innisfree ssh -n {}'", tunnel_name);
+        RootCommand::Doctor {} => {
+            info!("Running doctor, to determine platform support...");
+            doctor::platform_is_supported()?;
+            info!("Platform support looks good! Ready to rock.");
         }
-        let local_ip: IpAddr = mgr.wg.wg_local_device.interface.address;
-        if &dest_ip.to_string() != "127.0.0.1" {
-            tokio::spawn(manager::run_proxy(local_ip, dest_ip, mgr.services.clone()));
-            mgr.block().await?;
-        } else {
-            info!(
-                "Ready to listen on {}. Start local services. Make sure to bind to {}, rather than 127.0.0.1!",
-                port_spec,
-                mgr.wg.wg_local_ip,
+
+        RootCommand::Proxy { ports, dest_ip } => {
+            warn!(
+                "Subcommand 'proxy' only intended for debugging, it assumes tunnel exists already"
             );
             debug!("Blocking forever. Press ctrl+c to tear down the tunnel and destroy server.");
-            // Block forever, ctrl+c will interrupt
-            mgr.block().await?;
-        }
-    } else if let Some(matches) = matches.subcommand_matches("ssh") {
-        let tunnel_name = clean_name(matches.value_of("name").unwrap());
-        manager::open_shell(&tunnel_name).context(
-            "Server not found. Try running 'innisfree up' first, or pass --name=<service>",
-        )?;
-    } else if let Some(matches) = matches.subcommand_matches("ip") {
-        let tunnel_name = clean_name(matches.value_of("name").unwrap());
-        let ip = manager::get_server_ip(&tunnel_name).context(
-            "Server not found. Try running 'innisfree up' first, or pass --name=<service>.",
-        )?;
-        println!("{}", ip);
-    } else if let Some(matches) = matches.subcommand_matches("proxy") {
-        warn!("Subcommand 'proxy' only intended for debugging, it assumes tunnel exists already");
-        let dest_ip: IpAddr = matches.value_of("dest-ip").unwrap().parse().unwrap();
-        let port_spec = matches.value_of("ports").unwrap();
-        let ports = config::ServicePort::from_str_multi(port_spec).unwrap();
-        let local_ip: IpAddr = "127.0.0.1".parse().unwrap();
-        warn!("Ctrl+c will not halt proxy, use ctrl+z and `kill -9 %1`");
-        info!("Starting proxy for services {:?}", ports);
-        manager::run_proxy(local_ip, dest_ip, ports)
-            .await
-            .map_err(|e| anyhow!(format!("Proxy failed: {}", e)))?;
-    } else if let Some(_matches) = matches.subcommand_matches("doctor") {
-        info!("Running doctor, to determine platform support...");
-        doctor::platform_is_supported()?;
-        info!("Platform support looks good! Ready to rock.");
-    }
 
+            // Block forever, ctrl+c will interrupt
+            let ports = config::ServicePort::from_str_multi(&ports).unwrap();
+            let local_ip: IpAddr = "127.0.0.1".parse().unwrap();
+            warn!("Ctrl+c will not halt proxy, use ctrl+z and `kill -9 %1`");
+            info!("Starting proxy for services {:?}", ports);
+            manager::run_proxy(local_ip, dest_ip, ports)
+                .await
+                .map_err(|e| anyhow!(format!("Proxy failed: {}", e)))?;
+        }
+    }
     Ok(())
 }
