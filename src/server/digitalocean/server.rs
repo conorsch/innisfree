@@ -2,6 +2,7 @@
 //! Ideally the cloud provider logic would be generalized, but right now
 //! DigitalOcean is the only supported provider.
 
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -14,7 +15,13 @@ use std::net::IpAddr;
 use std::thread;
 use std::time;
 
+use crate::config::ServicePort;
+use crate::server::cloudinit::generate_user_data;
+use crate::server::digitalocean::floating_ip::FloatingIp;
 use crate::server::digitalocean::ssh_key::DigitalOceanSshKey;
+use crate::server::InnisfreeServer;
+use crate::ssh::SshKeypair;
+use crate::wg::WireguardManager;
 
 /// The zone in which the resources will be created, e.g. `sfo2`.
 /// See docs for more info: <https://docs.digitalocean.com/reference/api/api-reference/#tag/Regions>.
@@ -65,7 +72,7 @@ pub struct DropletConfig {
     /// See documentation for more options.
     size: String,
     /// Serialized content for a cloud-init YAML file.
-    /// The [crate::manager::InnisfreeManager] will handle automatically generating
+    /// The [crate::manager::TunnelManager] will handle automatically generating
     /// cloud-init content with appropriate key material, via
     /// [crate::server::cloudinit::CloudConfig].
     /// See documentation for more information: <https://cloudinit.readthedocs.io/en/latest/>.
@@ -98,12 +105,49 @@ impl Default for DropletConfig {
 }
 
 impl Droplet {
+    /// Block until a droplet is running. Upon creation, the API will
+    /// return a result where `status="new"`. This method blocks until
+    /// the API reports `state="running"`.
+    async fn wait_for_boot(&self) -> Result<Droplet> {
+        // The JSON response for droplet creation won't include info like
+        // public IPv4 address, because that hasn't been assigned yet. The 'status'
+        // field will show as "new", so wait until it's "active", then network info
+        // will be populated. Might be a good use of enums here.
+        loop {
+            thread::sleep(time::Duration::from_secs(10));
+            match get_droplet(self).await {
+                Ok(droplet) => {
+                    if droplet.status == "active" {
+                        return Ok(droplet);
+                    } else {
+                        info!("Server still booting, waiting...");
+                        continue;
+                    }
+                }
+                Err(_) => {
+                    return Err(anyhow!("Unknown error while waiting for droplet boot"));
+                }
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl InnisfreeServer for Droplet {
     /// Make an API request and create a new DigitalOcean droplet.
     /// Blocks until the server is "ready", which usually takes about 60 seconds.
-    pub async fn new(name: &str, user_data: &str, public_key: String) -> Result<Droplet> {
+    async fn new(
+        name: &str,
+        services: Vec<ServicePort>,
+        wg_mgr: WireguardManager,
+        ssh_client_keypair: &SshKeypair,
+        ssh_server_keypair: &SshKeypair,
+    ) -> Result<Self> {
         debug!("Creating new DigitalOcean Droplet");
-        // Create new ephemeral ssh keypair
-        let do_ssh_key = DigitalOceanSshKey::new(name.to_owned(), public_key).await?;
+        let user_data =
+            generate_user_data(ssh_client_keypair, ssh_server_keypair, &wg_mgr, &services).await?;
+        let do_ssh_key =
+            DigitalOceanSshKey::new(name, &ssh_client_keypair.public.to_owned()).await?;
         let ssh_keys: Vec<u32> = vec![do_ssh_key.id];
         // Build JSON request body, for sending to DigitalOcean API
         let droplet_config = DropletConfig {
@@ -137,36 +181,10 @@ impl Droplet {
         droplet.wait_for_boot().await
     }
 
-    /// Block until a droplet is running. Upon creation, the API will
-    /// return a result where `status="new"`. This method blocks until
-    /// the API reports `state="running"`.
-    async fn wait_for_boot(&self) -> Result<Droplet> {
-        // The JSON response for droplet creation won't include info like
-        // public IPv4 address, because that hasn't been assigned yet. The 'status'
-        // field will show as "new", so wait until it's "active", then network info
-        // will be populated. Might be a good use of enums here.
-        loop {
-            thread::sleep(time::Duration::from_secs(10));
-            match get_droplet(self).await {
-                Ok(droplet) => {
-                    if droplet.status == "active" {
-                        return Ok(droplet);
-                    } else {
-                        info!("Server still booting, waiting...");
-                        continue;
-                    }
-                }
-                Err(_) => {
-                    return Err(anyhow!("Unknown error while waiting for droplet boot"));
-                }
-            }
-        }
-    }
-
     /// Retrieves the public IPv4 address for the Droplet.
     /// Technically can fail, if results are missing from the API response.
     // TODO: IPv4 lookup can fail, should return Result to force handling.
-    pub fn ipv4_address(&self) -> IpAddr {
+    fn ipv4_address(&self) -> IpAddr {
         let mut s = String::new();
         for v4_network in &self.networks["v4"] {
             if v4_network["type"] == "public" {
@@ -178,8 +196,16 @@ impl Droplet {
         ip
     }
 
+    async fn assign_floating_ip(&self, floating_ip: IpAddr) -> Result<()> {
+        let f = FloatingIp {
+            ip: floating_ip,
+            droplet_id: self.id,
+        };
+        f.assign().await
+    }
+
     /// Calls the API to destroy a droplet.
-    pub async fn destroy(&self) -> Result<()> {
+    async fn destroy(&self) -> Result<()> {
         if let Some(k) = &self.ssh_pubkey {
             k.destroy().await?;
         } else {

@@ -56,9 +56,6 @@ impl SshKeypair {
             .unwrap()
             .to_string();
 
-        // From the dope https://github.com/Leo1003/rust-osshkeys/blob/master/examples/generate_keyfile.rs
-        // which bizarrely I am not yet using, found it after writing the shell-outs version
-        // already
         let mut fop = std::fs::OpenOptions::new();
         fop.write(true).create(true).truncate(true);
         // cfg_if! requires external crate, look into it

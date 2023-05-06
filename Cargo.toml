@@ -13,6 +13,7 @@ keywords = ["self-hosting", "wireguard"]
 
 [dependencies]
 anyhow = "*"
+async-trait = "0.1"
 clap = { version = "4", features = ["env", "derive", "cargo"] }
 custom_error = "~1.9"
 env_logger = "~0.9"

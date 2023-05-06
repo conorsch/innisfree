@@ -1,9 +1,12 @@
 //! High-level controller logic for managing
-//! service proxies, i.e. [InnisfreeManager].
+//! service proxies, i.e. [TunnelManager].
 
 use crate::config::{clean_config_dir, make_config_dir, ServicePort};
+
 use crate::proxy::proxy_handler;
+use crate::server::digitalocean::server::Droplet;
 use crate::server::InnisfreeServer;
+use crate::ssh::SshKeypair;
 use crate::wg::WireguardManager;
 use anyhow::{anyhow, Context, Result};
 use futures::future::join_all;
@@ -11,34 +14,61 @@ use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::path::PathBuf;
 use tokio::signal;
 
-#[derive(Debug)]
 /// Controller class for handling tunnel configurations.
 /// Handles the soup-to-nuts configuration, including server creation,
 /// WireGuard device config, and proxy.
-pub struct InnisfreeManager {
-    /// List of `ServicePort`s to configure.
+pub struct TunnelManager {
+    /// List of `ServicePort`s to manage connections for.
     pub services: Vec<ServicePort>,
     // dest_ip: IpAddr,
     /// Remote server handling public ingress.
-    pub server: InnisfreeServer,
+    pub server: Box<dyn InnisfreeServer>,
     /// Human-readable name for this service manager.
     pub name: String,
     /// Controller for Wireguard tunnels.
     pub wg: WireguardManager,
+    /// SSH keypair for managing client-side SSH connections.
+    pub ssh_client_keypair: SshKeypair,
+    /// SSH keypair for identifying remote SSH server identity.
+    pub ssh_server_keypair: SshKeypair,
+    /// Static IP to be attached to the server, for stable DNS entries on recreation.
+    pub static_ip: Option<IpAddr>,
 }
 
-impl InnisfreeManager {
+impl TunnelManager {
     /// Create a new controller for managing a collection of services.
     /// Call `up()` to build.
-    pub async fn new(tunnel_name: &str, services: Vec<ServicePort>) -> Result<InnisfreeManager> {
+    pub async fn new(
+        tunnel_name: &str,
+        services: Vec<ServicePort>,
+        static_ip: Option<IpAddr>,
+    ) -> Result<TunnelManager> {
         clean_config_dir(tunnel_name)?;
         let wg = WireguardManager::new(tunnel_name)?;
-        let server = InnisfreeServer::new(tunnel_name, services, wg.clone()).await?;
-        Ok(InnisfreeManager {
+        // Create new ephemeral ssh keypair
+        let ssh_client_keypair = SshKeypair::new("client")?;
+        let ssh_server_keypair = SshKeypair::new("server")?;
+        let server = Droplet::new(
+            tunnel_name,
+            services.clone(),
+            wg.clone(),
+            &ssh_client_keypair,
+            &ssh_server_keypair,
+        )
+        .await?;
+
+        if let Some(ip) = static_ip {
+            server.assign_floating_ip(ip).await?;
+        }
+
+        Ok(TunnelManager {
             name: tunnel_name.to_owned(),
-            services: server.services.to_vec(),
+            services,
             // dest_ip: "127.0.0.1".parse().unwrap(),
-            server,
+            server: Box::new(server),
+            ssh_client_keypair,
+            ssh_server_keypair,
+            static_ip,
             wg,
         })
     }
@@ -165,7 +195,7 @@ impl InnisfreeManager {
     /// us to verify the SSH connection on first use.
     fn known_hosts(&self) -> Result<String> {
         let ipv4_address = &self.server.ipv4_address();
-        let server_host_key = &self.server.ssh_server_keypair.public;
+        let server_host_key = &self.ssh_server_keypair.public;
         let mut host_line = ipv4_address.to_string();
         host_line.push(' ');
         host_line.push_str(server_host_key);
@@ -178,7 +208,7 @@ impl InnisfreeManager {
     /// Execute a shell command on the remote server.
     fn run_ssh_cmd(&self, cmd: Vec<&str>) -> Result<()> {
         trace!("Entering run_ssh_cmd");
-        let ssh_kp = &self.server.ssh_client_keypair.write_locally(&self.name)?;
+        let ssh_kp = &self.ssh_client_keypair.write_locally(&self.name)?;
         let known_hosts = &self.known_hosts()?;
         let mut known_hosts_opt = "UserKnownHostsFile=".to_owned();
         known_hosts_opt.push_str(known_hosts);
@@ -212,11 +242,6 @@ impl InnisfreeManager {
         let _ = self.server.destroy().await;
         clean_config_dir(&self.name)?;
         Ok(())
-    }
-    /// Attaches a reserved IP address to remote server. Makes it easier
-    /// to use DNS, which can be updated once to point to the reusable IP address.
-    pub async fn assign_floating_ip(&self, floating_ip: IpAddr) -> Result<()> {
-        self.server.assign_floating_ip(floating_ip).await
     }
 }
 

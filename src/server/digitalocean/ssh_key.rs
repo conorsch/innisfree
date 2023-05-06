@@ -52,7 +52,7 @@ impl DigitalOceanSshKey {
     /// Creates a new DigitalOceanSshKey based on the public key material passed in.
     /// A new key will be created via the API, so that a subsequent Droplet creation
     /// request can reference the DigitalOceanSshKey by its numeric ID.
-    pub async fn new(name: String, public_key: String) -> Result<DigitalOceanSshKey> {
+    pub async fn new(name: &str, public_key: &str) -> Result<DigitalOceanSshKey> {
         let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
         let req_body = json!({
             "name": name,

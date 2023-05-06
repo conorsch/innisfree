@@ -71,11 +71,8 @@ pub fn make_config_dir(service_name: &str) -> Result<PathBuf> {
 /// and subject to manual cleanup.
 pub fn clean_config_dir(service_name: &str) -> Result<()> {
     let config_dir = make_config_dir(service_name)?;
-    for f in std::fs::read_dir(&config_dir)? {
-        let f = f?;
-        std::fs::remove_file(f.path())?;
-    }
-    std::fs::remove_dir(config_dir)?;
+    debug!("Removing config dir: {}", config_dir.display());
+    std::fs::remove_dir_all(config_dir)?;
     Ok(())
 }
 

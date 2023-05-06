@@ -3,7 +3,7 @@
 //! but UDP support would be dope.
 //!
 //! The methods exposed here are low-level. More user-friendly abstractions
-//! can be found in the [crate::manager::InnisfreeManager] class..
+//! can be found in the [crate::manager::TunnelManager] class..
 
 use anyhow::Result;
 use futures::FutureExt;
