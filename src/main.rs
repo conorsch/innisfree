@@ -3,7 +3,6 @@ use clap::{crate_version, Parser, Subcommand};
 use config::clean_name;
 use std::env;
 use std::net::IpAddr;
-use std::sync::Arc;
 
 #[macro_use]
 extern crate log;
@@ -74,6 +73,13 @@ enum RootCommand {
     /// Run checks to evaluate platform support
     Doctor {},
 
+    /// Clean local config directory.
+    Clean {
+        /// Title for the service, used for cloud node and systemd service
+        #[clap(default_value = "innisfree", long, short, env = "INNISFREE_NAME")]
+        name: String,
+    },
+
     /// Start process to forward traffic, assumes tunnel already up
     Proxy {
         /// List of service ports to forward, comma-separated")
@@ -119,8 +125,8 @@ async fn main() -> Result<()> {
             let name = clean_name(&name);
 
             info!("Creating server '{}'", &name);
-            let mgr = manager::InnisfreeManager::new(&name, services).await?;
-            let mgr = Arc::new(mgr);
+            let mgr: manager::TunnelManager =
+                manager::TunnelManager::new(&name, services, floating_ip).await?;
             info!("Configuring server");
             match mgr.up() {
                 Ok(_) => {
@@ -136,10 +142,11 @@ async fn main() -> Result<()> {
             }
             // Really need a better default case for floating-ip
             match floating_ip {
-                Some(f) => {
+                Some(_f) => {
                     debug!("Configuring floating IP...");
-                    mgr.assign_floating_ip(f).await?;
-                    info!("Server ready! IPv4 address: {}", f);
+                    unimplemented!("Floating IP support disabled due to trait refactor.");
+                    // mgr.assign_floating_ip(f).await?;
+                    // info!("Server ready! IPv4 address: {}", f);
                 }
                 None => {
                     let ip = &mgr.server.ipv4_address();
@@ -186,6 +193,11 @@ async fn main() -> Result<()> {
             info!("Running doctor, to determine platform support...");
             doctor::platform_is_supported()?;
             info!("Platform support looks good! Ready to rock.");
+        }
+        RootCommand::Clean { name } => {
+            info!("Cleaning config directory");
+            let name = clean_name(&name);
+            config::clean_config_dir(&name)?;
         }
 
         RootCommand::Proxy { ports, dest_ip } => {
