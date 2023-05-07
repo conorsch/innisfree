@@ -77,11 +77,12 @@ impl TunnelManager {
     /// to a local Wireguard interface
     pub fn up(&self) -> Result<()> {
         self.wait_for_ssh();
-        debug!("Configuring remote proxy and opening tunnel...");
+        debug!("Configuring remote proxy...");
         self.wait_for_cloudinit()?;
         // Write out cloudinit config locally, for debugging
         // self.server.write_user_data();
         let ip = self.server.ipv4_address();
+        debug!("Configuring tunnel...");
         let mut wg = self.wg.wg_local_device.clone();
         wg.peer.endpoint = Some(ip);
         wg.write_locally(&self.name, &self.services)?;
@@ -249,13 +250,13 @@ impl TunnelManager {
 /// so that `innisfree ip` on the CLI can return an answer by inspecting
 /// the on-disk config for an instance running in a separate process.
 // TODO: store ip in config file locally
-pub fn get_server_ip(service_name: &str) -> Result<String> {
+pub fn get_server_ip(service_name: &str) -> Result<IpAddr> {
     trace!("Looking up server IP from known_hosts file");
     let mut fpath = make_config_dir(service_name)?;
     fpath.push("known_hosts");
     let known_hosts = std::fs::read_to_string(&fpath)?;
     let host_parts: Vec<&str> = known_hosts.split(' ').collect();
-    let ip: String = host_parts[0].to_string();
+    let ip: IpAddr = host_parts[0].to_string().parse()?;
     Ok(ip)
 }
 
@@ -267,7 +268,7 @@ pub fn open_shell(service_name: &str) -> Result<()> {
     known_hosts.push("known_hosts");
     let mut known_hosts_opt = "UserKnownHostsFile=".to_owned();
     known_hosts_opt.push_str(known_hosts.to_str().unwrap());
-    let ipv4_address = get_server_ip(service_name)?;
+    let ipv4_address = get_server_ip(service_name)?.to_string();
     let cmd_args = vec![
         "-l",
         "innisfree",
@@ -297,8 +298,8 @@ pub async fn run_proxy(
     // and collect the handles to await them all together, concurrently.
     let mut tasks = vec![];
     for s in services {
-        let listen_addr = format!("{}:{}", local_ip, &s.port);
-        let dest_addr = format!("{}:{}", dest_ip, &s.port);
+        let listen_addr: SocketAddr = format!("{}:{}", local_ip, &s.local_port).parse()?;
+        let dest_addr: SocketAddr = format!("{}:{}", dest_ip, &s.port).parse()?;
         let h = proxy_handler(listen_addr, dest_addr);
         // let ip = get_server_ip().unwrap();
         // debug!("Try accessing: {}:{} ({})", ip, s.port, s.protocol);

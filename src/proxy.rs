@@ -7,6 +7,7 @@
 
 use anyhow::Result;
 use futures::FutureExt;
+use std::net::SocketAddr;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
@@ -14,7 +15,7 @@ use tokio::net::TcpStream;
 // https://github.com/tokio-rs/tokio/blob/a08ce0d3e06d650361283dc87c8fe14b146df15d/examples/proxy.rs
 /// Handle proxying traffic along a given `TcpStream` to a given
 /// destination socket.
-pub async fn transfer(mut inbound: TcpStream, proxy_addr: String) -> Result<()> {
+pub async fn transfer(mut inbound: TcpStream, proxy_addr: SocketAddr) -> Result<()> {
     let mut outbound = TcpStream::connect(proxy_addr).await?;
 
     let (mut ri, mut wi) = inbound.split();
@@ -37,7 +38,7 @@ pub async fn transfer(mut inbound: TcpStream, proxy_addr: String) -> Result<()> 
 
 /// Create a blocking service proxy that passes TCP traffic
 /// between two sockets.
-pub async fn proxy_handler(listen_addr: String, dest_addr: String) -> Result<()> {
+pub async fn proxy_handler(listen_addr: SocketAddr, dest_addr: SocketAddr) -> Result<()> {
     debug!("Proxying traffic: {} -> {}", listen_addr, dest_addr);
     let listener = tokio::net::TcpListener::bind(&listen_addr).await?;
     while let Ok((inbound, _)) = listener.accept().await {

@@ -13,8 +13,10 @@ use std::path::PathBuf;
 // to build out the tunnel.
 #[derive(Debug, Clone, Serialize)]
 pub struct ServicePort {
-    /// Port number for the service.
+    /// Port number for the public service.
     pub port: i32,
+    /// Port number for the local service, to which traffic is forwarded.
+    pub local_port: i32,
     /// Protocol, one of TCP or UDP.
     pub protocol: String,
 }
@@ -25,8 +27,18 @@ impl ServicePort {
     pub fn from_str_multi(port_spec: &str) -> Result<Vec<ServicePort>> {
         Ok(port_spec
             .split(',')
-            .map(|sp| ServicePort::try_from(sp).unwrap())
+            .map(|s| ServicePort::try_from(s).unwrap())
             .collect())
+    }
+}
+
+impl Default for ServicePort {
+    fn default() -> Self {
+        ServicePort {
+            port: 80,
+            local_port: 80,
+            protocol: "TCP".to_string(),
+        }
     }
 }
 
@@ -35,24 +47,36 @@ impl TryFrom<&str> for ServicePort {
     type Error = anyhow::Error;
 
     fn try_from(port_spec: &str) -> Result<Self> {
-        let mut sp = ServicePort {
-            port: 80,
-            protocol: "TCP".to_string(),
-        };
+        let mut sp = ServicePort::default();
         if port_spec.contains('/') {
             let port_spec_parts: Vec<&str> = port_spec.split('/').collect();
-            let port: i32 = port_spec_parts[0].parse::<i32>()?;
-            let protocol: String = port_spec_parts[1].to_string();
-            sp.port = port;
-            sp.protocol = protocol;
+            sp.protocol = port_spec_parts[1].to_string();
+            sp = parse_port_spec(port_spec_parts[0])?;
         } else {
-            let port: i32 = port_spec.parse::<i32>()?;
-            let protocol: String = "TCP".to_string();
-            sp.port = port;
-            sp.protocol = protocol;
+            sp = parse_port_spec(port_spec)?;
         }
+
         Ok(sp)
     }
+}
+
+/// Handles str specs such as:
+///
+///   * "80/TCP"
+///   * "80"
+///   * "80:80"
+///
+fn parse_port_spec(port_spec: &str) -> Result<ServicePort> {
+    let mut sp = ServicePort::default();
+    if port_spec.contains(':') {
+        let port_spec_parts: Vec<&str> = port_spec.split(':').collect();
+        sp.port = port_spec_parts[0].parse()?;
+        sp.local_port = port_spec_parts[1].parse()?;
+    } else {
+        sp.port = port_spec.parse()?;
+        sp.local_port = port_spec.parse()?;
+    }
+    Ok(sp)
 }
 
 /// Create local config dir, e.g. ~/.config/innisfree/,
@@ -96,18 +120,15 @@ mod tests {
 
     #[test]
     fn service_port_manual_creation() {
-        let s = ServicePort {
-            port: 80,
-            protocol: "TCP".to_string(),
-        };
+        let s = ServicePort::default();
         assert!(s.port == 80);
         assert!(s.protocol == "TCP");
     }
 
     #[test]
-    fn web_ports_parse_ok() {
+    fn parse_web_ports() -> Result<()> {
         let port_spec = "80/TCP,443/TCP";
-        let services = ServicePort::from_str_multi(port_spec).unwrap();
+        let services = ServicePort::from_str_multi(port_spec)?;
         assert!(services.len() == 2);
         let s1 = &services[0];
         assert!(s1.port == 80);
@@ -116,6 +137,33 @@ mod tests {
         let s2 = &services[1];
         assert!(s2.port == 443);
         assert!(s2.protocol == "TCP");
+        Ok(())
+    }
+
+    #[test]
+    fn parse_different_ports() -> Result<()> {
+        let port_spec = "80:30080/TCP";
+        let s = ServicePort::try_from(port_spec)?;
+        assert!(s.port == 80);
+        assert!(s.local_port == 30080);
+        assert!(s.protocol == "TCP");
+        Ok(())
+    }
+    #[test]
+    fn parse_different_ports_multi() -> Result<()> {
+        let port_spec = "80:30080,443:30443";
+        let services = ServicePort::from_str_multi(port_spec)?;
+        assert!(services.len() == 2);
+        let s1 = &services[0];
+        assert!(s1.port == 80);
+        assert!(s1.local_port == 30080);
+        assert!(s1.protocol == "TCP");
+
+        let s2 = &services[1];
+        assert!(s2.port == 443);
+        assert!(s2.local_port == 30443);
+        assert!(s2.protocol == "TCP");
+        Ok(())
     }
     #[test]
     fn clean_service_name() {
