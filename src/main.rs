@@ -38,13 +38,11 @@ enum RootCommand {
         #[clap(default_value = "innisfree", long, short, env = "INNISFREE_NAME")]
         name: String,
 
-        /// List of service ports to forward, comma-separated")
-        #[clap(
-            default_value = "8080/TCP,443/TCP",
-            env = "INNISFREE_PORTS",
-            long,
-            short
-        )]
+        /// List of service ports to forward, comma-separated. Specified as:
+        /// `<PORT>[:<LOCAL_PORT>][/PROTOCOL]. For example, the default value `80:8000/TCP`
+        /// will publish `80/TCP` on the external ingress, forwarding traffic
+        /// to `8000/TCP` on the dest ip.
+        #[clap(default_value = "80:8000/TCP", env = "INNISFREE_PORTS", long, short)]
         ports: String,
 
         /// IPv4 Address of proxy destination, whither traffic is forwarded
@@ -82,16 +80,15 @@ enum RootCommand {
 
     /// Start process to forward traffic, assumes tunnel already up
     Proxy {
-        /// List of service ports to forward, comma-separated")
-        #[clap(
-            default_value = "8080/TCP,443/TCP",
-            env = "INNISFREE_PORTS",
-            long,
-            short
-        )]
+        /// List of service ports to forward, comma-separated.
+        /// Each pair of service ports should be colon-separated
+        /// between local and remote ports: e.g. "8000:80" means
+        /// that a local service on 8000/TCP will receive traffic
+        /// sent to 80/TCP on the remote cloud node.
+        #[clap(default_value = "8000:80", env = "INNISFREE_PORTS", long, short)]
         ports: String,
 
-        /// IPv4 Address of proxy destination, whither traffic is forwarded
+        /// IPv4 Address of proxy destination, whither traffic is forwarded.
         #[clap(default_value = "127.0.0.1", env = "INNISFREE_DEST_IP", long, short)]
         dest_ip: IpAddr,
     },

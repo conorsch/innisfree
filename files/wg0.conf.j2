@@ -21,7 +21,7 @@ ListenPort = {{ wg.interface.listenport }}
 # Also allow pinging between interfaces, for healthchecks.
 {% for s in services -%}
 {%- if s.protocol | upper == "TCP" %}
-PostUp = iptables -A INPUT -i %i -m {{ s.protocol | lower }} -p {{ s.protocol | lower }} --dport {{ s.port }} -j ACCEPT
+PostUp = iptables -A INPUT -i %i -m {{ s.protocol | lower }} -p {{ s.protocol | lower }} --dport {{ s.local_port }} -j ACCEPT
 {% endif -%}
 {%- endfor %}
 PostUp = iptables -A INPUT -i %i -p icmp --icmp-type 0 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
@@ -30,7 +30,7 @@ PostUp = iptables -A INPUT -i %i -j DROP
 
 {% for s in services -%}
 {%- if s.protocol | upper == "TCP" %}
-PostDown = iptables -D INPUT -i %i -m {{ s.protocol | lower }} -p {{ s.protocol | lower }} --dport {{ s.port }} -j ACCEPT
+PostDown = iptables -D INPUT -i %i -m {{ s.protocol | lower }} -p {{ s.protocol | lower }} --dport {{ s.local_port }} -j ACCEPT
 {% endif -%}
 {%- endfor %}
 PostDown = iptables -D INPUT -i %i -p icmp --icmp-type 0 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
