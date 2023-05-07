@@ -1,5 +1,9 @@
 # Innisfree changelog
 
+## 0.3.0
+* Add support for different local and remote port pairs, e.g. `80:8000`.
+* Dev: refactor InnisfreeServer as trait, implemented on Droplet.
+
 ## 0.2.16
 
 * Use Debian Stable (11 Bullseye), rather than Ubuntu LTS, for cloud image
