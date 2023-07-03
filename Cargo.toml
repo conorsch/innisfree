@@ -37,7 +37,7 @@ maintainer-scripts = "debian/"
 depends = "$auto"
 extended-description = "Creates a remote host in the cloud, then establishes a Wireguard tunnel to it. Only supports proxying TCP traffic, for now."
 assets = [
-  ["target/x86_64-unknown-linux-musl/release/innisfree", "usr/bin/", "755"],
+  ["target/release/innisfree", "usr/bin/", "755"],
   ["innisfree@.service", "usr/lib/systemd/system/", "644"],
 ]
 name = "innisfree"
