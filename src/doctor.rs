@@ -10,9 +10,9 @@ use anyhow::Result;
 pub fn platform_is_supported() -> Result<bool> {
     let mut result: bool = std::env::var("DIGITALOCEAN_API_TOKEN").is_ok();
     if check_if_command_exists("wg-quick") {
-        info!("Wireguard appears to be installed!");
+        tracing::info!("Wireguard appears to be installed!");
     } else {
-        warn!("Wireguard does not appear to be installed");
+        tracing::warn!("Wireguard does not appear to be installed");
         result = false;
     }
     Ok(result)

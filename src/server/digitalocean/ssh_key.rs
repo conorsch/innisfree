@@ -35,7 +35,7 @@ pub async fn get_all_keys() -> Result<Vec<DigitalOceanSshKey>> {
     let api_key = env::var("DIGITALOCEAN_API_TOKEN")?;
     let request_url = DO_API_BASE_URL.to_owned() + "/account/keys";
     let client = reqwest::Client::new();
-    debug!("Fetching SSH account public keys");
+    tracing::debug!("Fetching SSH account public keys");
     let response = client
         .get(request_url)
         .bearer_auth(api_key)
@@ -69,7 +69,7 @@ impl DigitalOceanSshKey {
             .await?
             .error_for_status()?;
 
-        debug!("Syncing SSH keypair to DigitalOcean...");
+        tracing::debug!("Syncing SSH keypair to DigitalOcean...");
         let j: serde_json::Value = response.json().await?;
         let k: String = j["ssh_key"].to_string();
         let do_ssh_key: DigitalOceanSshKey = serde_json::from_str(&k)?;
@@ -80,7 +80,7 @@ impl DigitalOceanSshKey {
         let api_key =
             env::var("DIGITALOCEAN_API_TOKEN").context("DIGITALOCEAN_API_TOKEN not set.")?;
         let request_url = DO_API_BASE_URL.to_owned() + "/account/keys/" + &self.id.to_string();
-        debug!("Deleting SSH keypair from DigitalOcean...");
+        tracing::debug!("Deleting SSH keypair from DigitalOcean...");
         let client = reqwest::Client::new();
         let response = client
             .delete(request_url)

@@ -3,10 +3,8 @@ use clap::{crate_version, Parser, Subcommand};
 use config::clean_name;
 use std::env;
 use std::net::IpAddr;
-
-#[macro_use]
-extern crate log;
-use env_logger::Env;
+use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
+use tracing_subscriber::{prelude::*, EnvFilter};
 
 // Innisfree imports
 mod config;
@@ -99,13 +97,20 @@ enum RootCommand {
 /// local services that should be exposed remotely.
 /// Pass `--help` for information.
 async fn main() -> Result<()> {
-    // Activate env_logger https://github.com/env-logger-rs/env_logger
-    // The `Env` lets us tweak what the environment
-    // variables to read are and what the default
-    // value is if they're missing
-    let env = Env::default().filter_or("RUST_LOG", "debug,reqwest=info");
-    env_logger::init_from_env(env);
+    // Set up logging via tracing-subscriber.
+    let filter_layer = EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("info"))?;
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        // .with_ansi(atty::is(atty::Stream::Stdout))
+        .with_ansi(true)
+        .with_target(true);
+
+    tracing_subscriber::registry()
+        .with(filter_layer)
+        .with(fmt_layer)
+        .init();
+
     let args = Args::parse();
+
     // Primary subcommand. Soup to nuts experience.
     match args.cmd {
         RootCommand::Up {
@@ -118,21 +123,21 @@ async fn main() -> Result<()> {
             let _do_token = env::var("DIGITALOCEAN_API_TOKEN")
                 .context("DIGITALOCEAN_API_TOKEN env var not set");
             let services = config::ServicePort::from_str_multi(&ports)?;
-            info!("Will provide proxies for {:?}", services);
+            tracing::info!("Will provide proxies for {:?}", services);
             let name = clean_name(&name);
 
-            info!("Creating server '{}'", &name);
+            tracing::info!("Creating server '{}'", &name);
             let mgr: manager::TunnelManager =
                 manager::TunnelManager::new(&name, services, floating_ip).await?;
-            info!("Configuring server");
+            tracing::info!("Configuring server");
             match mgr.up() {
                 Ok(_) => {
-                    trace!("Up reports success");
+                    tracing::trace!("Up reports success");
                 }
                 Err(e) => {
-                    error!("Failed bringing up tunnel: {}", e);
+                    tracing::error!("Failed bringing up tunnel: {}", e);
                     // Error probably unrecoverable
-                    warn!("Attempting to exit gracefully...");
+                    tracing::warn!("Attempting to exit gracefully...");
                     mgr.clean().await?;
                     std::process::exit(2);
                 }
@@ -140,32 +145,32 @@ async fn main() -> Result<()> {
             // Really need a better default case for floating-ip
             match floating_ip {
                 Some(_f) => {
-                    debug!("Configuring floating IP...");
+                    tracing::debug!("Configuring floating IP...");
                     unimplemented!("Floating IP support disabled due to trait refactor.");
                     // mgr.assign_floating_ip(f).await?;
-                    // info!("Server ready! IPv4 address: {}", f);
+                    // tracing::info!("Server ready! IPv4 address: {}", f);
                 }
                 None => {
                     let ip = &mgr.server.ipv4_address()?;
-                    info!("Server ready! IPv4 address: {}", ip);
+                    tracing::info!("Server ready! IPv4 address: {}", ip);
                 }
             }
             if name == "innisfree" {
-                debug!("Try logging in with 'innisfree ssh'");
+                tracing::debug!("Try logging in with 'innisfree ssh'");
             } else {
-                debug!("Try logging in with 'innisfree ssh -n {}'", name);
+                tracing::debug!("Try logging in with 'innisfree ssh -n {}'", name);
             }
             let local_ip: IpAddr = mgr.wg.wg_local_device.interface.address;
             if &dest_ip.to_string() != "127.0.0.1" {
                 tokio::spawn(manager::run_proxy(local_ip, dest_ip, mgr.services.clone()));
                 mgr.block().await?;
             } else {
-                info!(
+                tracing::info!(
                     "Ready to listen on {}. Start local services. Make sure to bind to {}, rather than 127.0.0.1!",
                     ports,
                     mgr.wg.wg_local_ip,
                 );
-                debug!(
+                tracing::debug!(
                     "Blocking forever. Press ctrl+c to tear down the tunnel and destroy server."
                 );
                 // Block forever, ctrl+c will interrupt
@@ -187,27 +192,29 @@ async fn main() -> Result<()> {
             println!("{}", ip);
         }
         RootCommand::Doctor {} => {
-            info!("Running doctor, to determine platform support...");
+            tracing::info!("Running doctor, to determine platform support...");
             doctor::platform_is_supported()?;
-            info!("Platform support looks good! Ready to rock.");
+            tracing::info!("Platform support looks good! Ready to rock.");
         }
         RootCommand::Clean { name } => {
-            info!("Cleaning config directory");
+            tracing::info!("Cleaning config directory");
             let name = clean_name(&name);
             config::clean_config_dir(&name)?;
         }
 
         RootCommand::Proxy { ports, dest_ip } => {
-            warn!(
+            tracing::warn!(
                 "Subcommand 'proxy' only intended for debugging, it assumes tunnel exists already"
             );
-            debug!("Blocking forever. Press ctrl+c to tear down the tunnel and destroy server.");
+            tracing::debug!(
+                "Blocking forever. Press ctrl+c to tear down the tunnel and destroy server."
+            );
 
             // Block forever, ctrl+c will interrupt
             let ports = config::ServicePort::from_str_multi(&ports)?;
             let local_ip: IpAddr = "127.0.0.1".parse()?;
-            warn!("Ctrl+c will not halt proxy, use ctrl+z and `kill -9 %1`");
-            info!("Starting proxy for services {:?}", ports);
+            tracing::warn!("Ctrl+c will not halt proxy, use ctrl+z and `kill -9 %1`");
+            tracing::info!("Starting proxy for services {:?}", ports);
             manager::run_proxy(local_ip, dest_ip, ports)
                 .await
                 .map_err(|e| anyhow!(format!("Proxy failed: {}", e)))?;

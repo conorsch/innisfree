@@ -39,12 +39,12 @@ pub async fn transfer(mut inbound: TcpStream, proxy_addr: SocketAddr) -> Result<
 /// Create a blocking service proxy that passes TCP traffic
 /// between two sockets.
 pub async fn proxy_handler(listen_addr: SocketAddr, dest_addr: SocketAddr) -> Result<()> {
-    debug!("Proxying traffic: {} -> {}", listen_addr, dest_addr);
+    tracing::debug!("Proxying traffic: {} -> {}", listen_addr, dest_addr);
     let listener = tokio::net::TcpListener::bind(&listen_addr).await?;
     while let Ok((inbound, _)) = listener.accept().await {
         let transfer = transfer(inbound, dest_addr).map(|r| {
             if let Err(e) = r {
-                warn!("Proxy connection dropped, creating new handler: {}", e);
+                tracing::warn!("Proxy connection dropped, creating new handler: {}", e);
             }
         });
         tokio::spawn(transfer);

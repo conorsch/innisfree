@@ -41,35 +41,40 @@ impl SshKeypair {
     /// Builds predictable filename, based on the prefix,
     /// for use in writing to disk.
     fn filename(&self) -> String {
-        let mut key_name = String::from(&self.prefix);
-        key_name.push('_');
-        key_name.push_str("id_ed25519");
-        key_name
+        format!("{}_{}", &self.prefix, "id_ed25519")
     }
+
     /// Store keypair on disk, in config dir.
     pub fn write_locally(&self, service_name: &str) -> Result<PathBuf> {
-        let config_dir = make_config_dir(service_name)?;
-        let key_name = self.filename();
-        let privkey_filepath = Path::new(&config_dir).join(key_name);
+        tracing::trace!("writing ssh keypair locally");
+        // Ensure service config dir is present
+        let config_dir = make_config_dir(service_name).context("failed to create config dir")?;
 
-        let mut fop = std::fs::OpenOptions::new();
-        fop.write(true).create(true).truncate(true);
-        // cfg_if! requires external crate, look into it
-        // cfg_if! {
-        //    if #[cfg(unix)] {
-        //        fop.mode(0o600);
-        //    }
-        // }
-        fop.mode(0o600);
-        let mut f = fop.open(&privkey_filepath)?;
-        // std::fs::write(&privkey_filepath, &self.private).expect("Failed to write SSH privkey");
-        f.write_all(self.private.as_bytes())
+        // Write SSH privkey.
+        let privkey_filepath = Path::new(&config_dir).join(&self.filename());
+        let mut privkey = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&privkey_filepath)
+            .context("failed to open privkey filepath for writing")?;
+        privkey
+            .write_all(&self.private.as_bytes())
             .context("Failed to write SSH privkey")?;
 
-        // Pubkey is public, so default umask is fine, expecting 644 or so.
-        let pubkey_filepath = privkey_filepath.join(".pub");
-        std::fs::write(pubkey_filepath, &self.public)
-            .map_err(|e| anyhow::Error::new(e).context("Failed to write SSH pubkey"))?;
+        // Write SSH pubkey.
+        let pubkey_filepath = Path::new(&config_dir).join(format!("{}.pub", &self.filename()));
+        let mut pubkey = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o644)
+            .open(&pubkey_filepath)
+            .context("failed to open pubkey filepath for writing")?;
+        pubkey
+            .write_all(&self.public.as_bytes())
+            .context("failed to write SSH pubkey")?;
         Ok(privkey_filepath)
     }
 }

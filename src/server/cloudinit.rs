@@ -94,7 +94,7 @@ pub async fn generate_user_data(
             }
         }
         Err(e) => {
-            warn!("No SSH pubkeys found via API: {}", e);
+            tracing::warn!("No SSH pubkeys found via API: {}", e);
         }
     }
 

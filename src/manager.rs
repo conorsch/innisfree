@@ -76,20 +76,25 @@ impl TunnelManager {
     /// to a local Wireguard interface
     pub fn up(&self) -> Result<()> {
         self.wait_for_ssh()?;
-        debug!("Configuring remote proxy...");
-        self.wait_for_cloudinit()?;
+        tracing::debug!("Configuring remote proxy...");
+        self.wait_for_cloudinit()
+            .context("failed while waiting for cloudinit")?;
         // Write out cloudinit config locally, for debugging
         // self.server.write_user_data();
         let ip = self.server.ipv4_address()?;
-        debug!("Configuring tunnel...");
+        tracing::debug!("Configuring tunnel...");
         let mut wg = self.wg.wg_local_device.clone();
         wg.peer.endpoint = Some(ip);
-        wg.write_locally(&self.name, &self.services)?;
-        debug!("Bringing up remote Wireguard interface");
-        self.bring_up_remote_wg()?;
-        debug!("Bringing up local Wireguard interface");
-        self.bring_up_local_wg()?;
-        trace!("Testing connection");
+        wg.write_locally(&self.name, &self.services)
+            .context("failed to write wireguard configs")?;
+        tracing::debug!("Bringing up remote Wireguard interface");
+        self.bring_up_remote_wg()
+            .context("failed to bring up remote wg interface")?;
+        tracing::debug!("Bringing up local Wireguard interface");
+        self.bring_up_local_wg()
+            .context("failed to bring up local wg interface")?;
+
+        tracing::trace!("Testing connection");
         self.test_connection()
     }
     /// Blocks until the server's cloudinit process reports completion.
@@ -104,12 +109,12 @@ impl TunnelManager {
             let stream = TcpStream::connect(dest_ip);
             match stream {
                 Ok(_) => {
-                    debug!("SSH port is open, proceeding");
+                    tracing::debug!("SSH port is open, proceeding");
                     break;
                 }
                 Err(_) => {
-                    debug!("Waiting for ssh...");
-                    trace!("Polling socket {})...", dest_ip);
+                    tracing::debug!("Waiting for ssh...");
+                    tracing::trace!("Polling socket {})...", dest_ip);
                     std::thread::sleep(std::time::Duration::from_secs(10));
                 }
             }
@@ -121,13 +126,13 @@ impl TunnelManager {
     pub async fn block(&self) -> Result<()> {
         match signal::ctrl_c().await {
             Ok(()) => {
-                warn!("Received stop signal, exiting gracefully");
+                tracing::warn!("Received stop signal, exiting gracefully");
                 self.clean().await?;
-                info!("Clean up complete, exiting");
+                tracing::info!("Clean up complete, exiting");
                 std::process::exit(0);
             }
             Err(e) => {
-                error!("Unable to register hook for ctrl+c: {}", e);
+                tracing::error!("Unable to register hook for ctrl+c: {}", e);
                 std::process::exit(10);
             }
         }
@@ -135,9 +140,9 @@ impl TunnelManager {
     /// Ping remote remote Wireguard IP from local Wireguard device.
     /// Ensures connectivity is established between remote and local interfaces.
     fn test_connection(&self) -> Result<()> {
-        trace!("Inside test connection, setting up vars");
+        tracing::trace!("Inside test connection, setting up vars");
         let ip = &self.wg.wg_remote_ip;
-        trace!("Inside test connection, running ping cmd");
+        tracing::trace!("Inside test connection, running ping cmd");
         std::process::Command::new("ping")
             .arg("-c1")
             .arg("-w5")
@@ -146,7 +151,7 @@ impl TunnelManager {
             .stderr(std::process::Stdio::null())
             .status()
             .context("Failed to ping remote Wireguard interface, tunnel broken")?;
-        debug!("Confirmed tunnel is established, able to ping across it");
+        tracing::debug!("Confirmed tunnel is established, able to ping across it");
         Ok(())
     }
     /// Returns `PathBuf`, creating directory if necessary.
@@ -156,19 +161,19 @@ impl TunnelManager {
     /// Runs `wg-quick up` on remote server to bring up its Wireguard interface.
     fn bring_up_remote_wg(&self) -> Result<()> {
         let cmd = vec!["wg-quick", "up", "/tmp/innisfree.conf"];
-        trace!("Activating remote wg interface");
+        tracing::trace!("Activating remote wg interface");
         self.run_ssh_cmd(cmd)
     }
     /// Runs `wg-quick up` on localhost to bring up local Wireguard interface.
     fn bring_up_local_wg(&self) -> Result<()> {
-        trace!("Bringing up local wg conn");
+        tracing::trace!("Bringing up local wg conn");
         // Bring down in case the config was running with a different host
         let _down = self.bring_down_local_wg();
-        trace!("Building path to local wg config");
+        tracing::trace!("Building path to local wg config");
         // Bring down in case the config was running with a different host
         let mut fpath = std::path::PathBuf::from(&self.config_dir()?);
         fpath.push(format!("{}.conf", &self.name));
-        trace!("Running local wg-quick cmd");
+        tracing::trace!("Running local wg-quick cmd");
         std::process::Command::new("wg-quick")
             .arg("up")
             .arg(fpath.display().to_string())
@@ -203,12 +208,12 @@ impl TunnelManager {
     }
     /// Execute a shell command on the remote server.
     fn run_ssh_cmd(&self, cmd: Vec<&str>) -> Result<()> {
-        trace!("Entering run_ssh_cmd");
-        let ssh_kp = &self.ssh_client_keypair.write_locally(&self.name)?;
+        tracing::trace!("Entering run_ssh_cmd");
+        let ssh_kp = &self
+            .ssh_client_keypair
+            .write_locally(&self.name)?;
         let ssh_kp_s = ssh_kp.display().to_string();
-        let known_hosts = &self.known_hosts()?;
-        let mut known_hosts_opt = "UserKnownHostsFile=".to_owned();
-        known_hosts_opt.push_str(known_hosts);
+        let known_hosts_opt = format!("UserKnownHostsFile={}", &self.known_hosts()?);
         let ipv4_address = &self.server.ipv4_address()?.to_string();
         let mut cmd_args = vec![
             "-l",
@@ -227,13 +232,13 @@ impl TunnelManager {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
-            .context("SSH command failed")?;
+            .context("ssh command failed")?;
         Ok(())
     }
     /// Destroys all infrastructure, including local Wireguard interfaces,
     /// remote server, and local config dir.
     pub async fn clean(&self) -> Result<()> {
-        debug!("Removing local Wireguard interface");
+        tracing::debug!("removing local Wireguard interface");
         // Ignore errors, since we want to try all handlers
         let _ = self.bring_down_local_wg();
         let _ = self.server.destroy().await;
@@ -247,9 +252,8 @@ impl TunnelManager {
 /// the on-disk config for an instance running in a separate process.
 // TODO: store ip in config file locally
 pub fn get_server_ip(service_name: &str) -> Result<IpAddr> {
-    trace!("Looking up server IP from known_hosts file");
-    let mut fpath = make_config_dir(service_name)?;
-    fpath.push("known_hosts");
+    tracing::trace!("Looking up server IP from known_hosts file");
+    let fpath = make_config_dir(service_name)?.join("known_hosts");
     let known_hosts = std::fs::read_to_string(&fpath)?;
     let host_parts: Vec<&str> = known_hosts.split(' ').collect();
     let ip: IpAddr = host_parts[0].to_string().parse()?;
@@ -300,12 +304,12 @@ pub async fn run_proxy(
     // We expect the proxies to block indefinitely, except ctrl+c.
     // If they return earlier, we'll be able to inspect the errors.
     let proxy_tasks = join_all(tasks).await;
-    warn!("Proxy stopped unexpectedly, no longer forwarding traffic");
+    tracing::warn!("Proxy stopped unexpectedly, no longer forwarding traffic");
     for t in proxy_tasks {
         match t {
             Ok(t) => {
                 // I don't expect to see this
-                debug!("Service proxy returned ok: {:?}", t);
+                tracing::debug!("Service proxy returned ok: {:?}", t);
             }
             Err(e) => {
                 return Err(anyhow!("Service proxy failed: {}", e));

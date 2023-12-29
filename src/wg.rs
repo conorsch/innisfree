@@ -102,12 +102,9 @@ impl WireguardDevice {
     /// Save the config file to disk, within the configuration directory for project state.
     /// This method is only appropriate for the local end of the Innisfree tunnel.
     pub fn write_locally(&self, service_name: &str, services: &[ServicePort]) -> Result<()> {
-        let mut wg_config_path = make_config_dir(service_name)?;
-        let wg_iface_name = format!("{}.conf", service_name);
-        wg_config_path.push(wg_iface_name);
+        let wg_config_path = make_config_dir(service_name)?.join(format!("{}.conf", service_name));
         let mut f = std::fs::File::create(&wg_config_path)?;
-        let wg_config = &self.config_with_services(services)?;
-        f.write_all(wg_config.as_bytes())?;
+        f.write_all(&self.config_with_services(services)?.as_bytes())?;
         Ok(())
     }
 }
@@ -344,9 +341,9 @@ mod tests {
         // 'wg genkey | wg pubkey'
         let privkey = String::from("yPgz26A4S6RcniNaikFZrc0C0SyCW1moXmDP7AMeimE=");
         let expected_pubkey = "ISRq2SHZQDnSfV0VlmMEP4MbwfExE/iNHzthMQ7eNmY=";
-        debug!("Expecting pubkey: {}", expected_pubkey);
+        tracing::debug!("Expecting pubkey: {}", expected_pubkey);
         let pubkey = derive_wireguard_pubkey(&privkey)?;
-        debug!("Found pubkey: {}", pubkey);
+        tracing::debug!("Found pubkey: {}", pubkey);
         assert_eq!(pubkey, "ISRq2SHZQDnSfV0VlmMEP4MbwfExE/iNHzthMQ7eNmY=");
         Ok(())
     }

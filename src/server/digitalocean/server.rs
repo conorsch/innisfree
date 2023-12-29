@@ -120,7 +120,7 @@ impl Droplet {
                     if droplet.status == "active" {
                         return Ok(droplet);
                     } else {
-                        info!("Server still booting, waiting...");
+                        tracing::info!("Server still booting, waiting...");
                         continue;
                     }
                 }
@@ -143,7 +143,7 @@ impl InnisfreeServer for Droplet {
         ssh_client_keypair: &SshKeypair,
         ssh_server_keypair: &SshKeypair,
     ) -> Result<Self> {
-        debug!("Creating new DigitalOcean Droplet");
+        tracing::debug!("Creating new DigitalOcean Droplet");
         let user_data =
             generate_user_data(ssh_client_keypair, ssh_server_keypair, &wg_mgr, &services).await?;
         let do_ssh_key =
@@ -178,7 +178,7 @@ impl InnisfreeServer for Droplet {
         // Add SSH key info after creation, since JSON response won't include it,
         // even though JSON request did. We'll need it to clean up in `self.destroy`.
         droplet.ssh_pubkey = Some(do_ssh_key);
-        debug!("Server created, waiting for networking");
+        tracing::debug!("Server created, waiting for networking");
         droplet.wait_for_boot().await
     }
 
@@ -208,7 +208,7 @@ impl InnisfreeServer for Droplet {
         if let Some(k) = &self.ssh_pubkey {
             k.destroy().await?;
         } else {
-            warn!("No API pubkey associated with droplet, not destroying");
+            tracing::warn!("No API pubkey associated with droplet, not destroying");
         }
 
         let api_key =
@@ -224,7 +224,7 @@ impl InnisfreeServer for Droplet {
             .error_for_status()
             .context("Failed to destroy droplet")?;
 
-        debug!("Droplet destroyed");
+        tracing::debug!("Droplet destroyed");
         Ok(())
     }
 }

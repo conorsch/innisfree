@@ -4,6 +4,9 @@
 set -euo pipefail
 set -x
 
+export RUST_LOG=innisfree=trace
+export OPENSSL_STATIC=1
+
 # Declare TCP port to check over
 local_port="8080"
 
@@ -29,6 +32,7 @@ trap 'cleanup' EXIT
 # We don't use 'cargo run' because we want SIGINT to tear down the process.
 # Wrapping innisfree in 'cargo run' may interfere with signal handling.
 cargo build
+sudo setcap CAP_NET_BIND_SERVICE,CAP_NET_ADMIN=+ep ./target/debug/innisfree
 ./target/debug/innisfree up -p "$local_port" &
 sleep 90
 

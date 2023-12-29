@@ -42,7 +42,7 @@ impl FloatingIp {
             .await
             .context("Network error, check connection")?;
 
-        debug!("Assigning floating IP to droplet...");
+        tracing::debug!("Assigning floating IP to droplet...");
         Ok(())
     }
 }
