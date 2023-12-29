@@ -64,7 +64,6 @@ impl TunnelManager {
         Ok(TunnelManager {
             name: tunnel_name.to_owned(),
             services,
-            // dest_ip: "127.0.0.1".parse().unwrap(),
             server: Box::new(server),
             ssh_client_keypair,
             ssh_server_keypair,
@@ -76,12 +75,12 @@ impl TunnelManager {
     /// configures it to forward public ports over its Wireguard interface,
     /// to a local Wireguard interface
     pub fn up(&self) -> Result<()> {
-        self.wait_for_ssh();
+        self.wait_for_ssh()?;
         debug!("Configuring remote proxy...");
         self.wait_for_cloudinit()?;
         // Write out cloudinit config locally, for debugging
         // self.server.write_user_data();
-        let ip = self.server.ipv4_address();
+        let ip = self.server.ipv4_address()?;
         debug!("Configuring tunnel...");
         let mut wg = self.wg.wg_local_device.clone();
         wg.peer.endpoint = Some(ip);
@@ -99,8 +98,8 @@ impl TunnelManager {
         self.run_ssh_cmd(cmd)
     }
     /// Blocks until 22/TCP is available on the server.
-    fn wait_for_ssh(&self) {
-        let dest_ip = SocketAddr::new(self.server.ipv4_address(), 22);
+    fn wait_for_ssh(&self) -> Result<()> {
+        let dest_ip = SocketAddr::new(self.server.ipv4_address()?, 22);
         loop {
             let stream = TcpStream::connect(dest_ip);
             match stream {
@@ -115,6 +114,7 @@ impl TunnelManager {
                 }
             }
         }
+        Ok(())
     }
     /// Wait for an interrupt signal, then terminate gracefully,
     /// cleaning up droplet resources before exit.
@@ -171,7 +171,7 @@ impl TunnelManager {
         trace!("Running local wg-quick cmd");
         std::process::Command::new("wg-quick")
             .arg("up")
-            .arg(fpath.to_str().unwrap())
+            .arg(fpath.display().to_string())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()?;
@@ -180,11 +180,10 @@ impl TunnelManager {
     /// Run `wg-quick down` on localhost to destroy local Wireguard interface.
     fn bring_down_local_wg(&self) -> Result<()> {
         let cmd = "wg-quick";
-        let mut fpath = make_config_dir(&self.name)?;
-        fpath.push(format!("{}.conf", &self.name));
-        let cmd_args = vec!["down", fpath.to_str().unwrap()];
+        let fpath = make_config_dir(&self.name)?.join(format!("{}.conf", &self.name));
+        let fpath_s = &fpath.display().to_string();
         std::process::Command::new(cmd)
-            .args(cmd_args)
+            .args(vec!["down", fpath_s])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
@@ -195,30 +194,27 @@ impl TunnelManager {
     /// generated SSH hostkey for the remote server. Doing so allows
     /// us to verify the SSH connection on first use.
     fn known_hosts(&self) -> Result<String> {
-        let ipv4_address = &self.server.ipv4_address();
+        let ipv4_address = &self.server.ipv4_address()?;
         let server_host_key = &self.ssh_server_keypair.public;
-        let mut host_line = ipv4_address.to_string();
-        host_line.push(' ');
-        host_line.push_str(server_host_key);
-
-        let mut fpath = make_config_dir(&self.name)?;
-        fpath.push("known_hosts");
-        std::fs::write(fpath.to_str().unwrap(), host_line).expect("Failed to create known_hosts");
-        Ok(fpath.to_str().unwrap().to_string())
+        let host_line = format!("{} {}", ipv4_address, server_host_key);
+        let fpath = make_config_dir(&self.name)?.join("known_hosts");
+        std::fs::write(&fpath, host_line).context("Failed to create known_hosts")?;
+        Ok(fpath.display().to_string())
     }
     /// Execute a shell command on the remote server.
     fn run_ssh_cmd(&self, cmd: Vec<&str>) -> Result<()> {
         trace!("Entering run_ssh_cmd");
         let ssh_kp = &self.ssh_client_keypair.write_locally(&self.name)?;
+        let ssh_kp_s = ssh_kp.display().to_string();
         let known_hosts = &self.known_hosts()?;
         let mut known_hosts_opt = "UserKnownHostsFile=".to_owned();
         known_hosts_opt.push_str(known_hosts);
-        let ipv4_address = &self.server.ipv4_address().to_string();
+        let ipv4_address = &self.server.ipv4_address()?.to_string();
         let mut cmd_args = vec![
             "-l",
             "innisfree",
             "-i",
-            ssh_kp,
+            &ssh_kp_s,
             "-o",
             &known_hosts_opt,
             "-o",
@@ -262,18 +258,16 @@ pub fn get_server_ip(service_name: &str) -> Result<IpAddr> {
 
 /// Create an interface SSH session on remote server.
 pub fn open_shell(service_name: &str) -> Result<()> {
-    let mut client_key = make_config_dir(service_name)?;
-    client_key.push("client_id_ed25519");
-    let mut known_hosts = make_config_dir(service_name)?;
-    known_hosts.push("known_hosts");
-    let mut known_hosts_opt = "UserKnownHostsFile=".to_owned();
-    known_hosts_opt.push_str(known_hosts.to_str().unwrap());
+    let client_key = make_config_dir(service_name)?.join("client_id_ed25519");
+    let client_key_s = client_key.display().to_string();
+    let known_hosts = make_config_dir(service_name)?.join("known_hosts");
+    let known_hosts_opt = format!("UserKnownHostsFile={}", known_hosts.display());
     let ipv4_address = get_server_ip(service_name)?.to_string();
     let cmd_args = vec![
         "-l",
         "innisfree",
         "-i",
-        client_key.to_str().unwrap(),
+        &client_key_s,
         "-o",
         &known_hosts_opt,
         "-o",
@@ -301,8 +295,6 @@ pub async fn run_proxy(
         let listen_addr: SocketAddr = format!("{}:{}", local_ip, &s.local_port).parse()?;
         let dest_addr: SocketAddr = format!("{}:{}", dest_ip, &s.port).parse()?;
         let h = proxy_handler(listen_addr, dest_addr);
-        // let ip = get_server_ip().unwrap();
-        // debug!("Try accessing: {}:{} ({})", ip, s.port, s.protocol);
         tasks.push(h);
     }
     // We expect the proxies to block indefinitely, except ctrl+c.

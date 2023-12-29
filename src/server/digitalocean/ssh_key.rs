@@ -2,7 +2,7 @@
 //! Adding a new SSH key on instance creation prevents emails on
 //! instance creation, providing a root pw.
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 use serde_json::json;
 use std::env;
@@ -53,7 +53,7 @@ impl DigitalOceanSshKey {
     /// A new key will be created via the API, so that a subsequent Droplet creation
     /// request can reference the DigitalOceanSshKey by its numeric ID.
     pub async fn new(name: &str, public_key: &str) -> Result<DigitalOceanSshKey> {
-        let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
+        let api_key = env::var("DIGITALOCEAN_API_TOKEN")?;
         let req_body = json!({
             "name": name,
             "public_key": public_key,
@@ -77,7 +77,8 @@ impl DigitalOceanSshKey {
     }
     /// Delete the DigitalOceanSshKey via the API.
     pub async fn destroy(&self) -> Result<()> {
-        let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
+        let api_key =
+            env::var("DIGITALOCEAN_API_TOKEN").context("DIGITALOCEAN_API_TOKEN not set.")?;
         let request_url = DO_API_BASE_URL.to_owned() + "/account/keys/" + &self.id.to_string();
         debug!("Deleting SSH keypair from DigitalOcean...");
         let client = reqwest::Client::new();

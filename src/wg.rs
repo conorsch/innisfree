@@ -105,7 +105,7 @@ impl WireguardDevice {
         let mut wg_config_path = make_config_dir(service_name)?;
         let wg_iface_name = format!("{}.conf", service_name);
         wg_config_path.push(wg_iface_name);
-        let mut f = std::fs::File::create(&wg_config_path).unwrap();
+        let mut f = std::fs::File::create(&wg_config_path)?;
         let wg_config = &self.config_with_services(services)?;
         f.write_all(wg_config.as_bytes())?;
         Ok(())
@@ -194,10 +194,7 @@ fn generate_wireguard_privkey() -> Result<String> {
         .args(["genkey"])
         .output()
         .context("Failed to generate Wireguard keypair")?;
-    let privkey: String = str::from_utf8(&privkey_cmd.stdout)
-        .unwrap()
-        .trim()
-        .to_string();
+    let privkey: String = str::from_utf8(&privkey_cmd.stdout)?.trim().to_string();
     Ok(privkey)
 }
 
@@ -212,10 +209,18 @@ fn derive_wireguard_pubkey(privkey: &str) -> Result<String> {
         .spawn()?;
 
     // Write wg privkey to stdin on pubkey process
-    pubkey_cmd.stdin.unwrap().write_all(privkey.as_bytes())?;
+    pubkey_cmd
+        .stdin
+        .ok_or(anyhow::anyhow!("failed to open stdin on wg pubkey command"))?
+        .write_all(privkey.as_bytes())?;
 
     let mut pubkey = String::new();
-    pubkey_cmd.stdout.unwrap().read_to_string(&mut pubkey)?;
+    pubkey_cmd
+        .stdout
+        .ok_or(anyhow::anyhow!(
+            "failed to open stdout on wg pubkey command"
+        ))?
+        .read_to_string(&mut pubkey)?;
 
     pubkey = pubkey.trim().to_string();
     Ok(pubkey)
@@ -226,14 +231,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn config_generation() {
-        let wg_hosts = _generate_hosts();
+    fn config_generation() -> anyhow::Result<()> {
+        let wg_hosts = _generate_hosts()?;
         let wg_device = WireguardDevice {
             name: "foo1".to_string(),
             interface: wg_hosts[0].clone(),
             peer: wg_hosts[1].clone(),
         };
-        let wg_config = wg_device.config().unwrap();
+        let wg_config = wg_device.config()?;
         assert!(wg_config.contains("Interface"));
         assert!(wg_config.contains("PrivateKey = "));
 
@@ -246,40 +251,43 @@ mod tests {
         // Slashes '/' will be rendered as hex value &#x2F if formatting is broken
         assert!(!wg_config.contains("&#x2F"));
         assert!(!wg_config.contains(r"&#x2F"));
+
+        Ok(())
     }
 
     // Helper function for reusable structs
-    fn _generate_hosts() -> Vec<WireguardHost> {
-        let kp1 = WireguardKeypair::new().unwrap();
+    fn _generate_hosts() -> Result<Vec<WireguardHost>> {
+        let kp1 = WireguardKeypair::new()?;
         let h1 = WireguardHost {
             name: "foo1".to_string(),
-            address: "127.0.0.1".parse().unwrap(),
-            endpoint: Some("1.1.1.1".parse().unwrap()),
+            address: "127.0.0.1".parse()?,
+            endpoint: Some("1.1.1.1".parse()?),
             listenport: 80,
             keypair: kp1,
         };
-        let kp2 = WireguardKeypair::new().unwrap();
+        let kp2 = WireguardKeypair::new()?;
         let h2 = WireguardHost {
             name: "foo2".to_string(),
-            address: "127.0.0.1".parse().unwrap(),
+            address: "127.0.0.1".parse()?,
             endpoint: None,
             listenport: 80,
             keypair: kp2,
         };
         let wg_hosts: Vec<WireguardHost> = vec![h1, h2];
-        wg_hosts
+        Ok(wg_hosts)
     }
 
     #[test]
-    fn host_generation() {
-        let wg_hosts = _generate_hosts();
+    fn host_generation() -> anyhow::Result<()> {
+        let wg_hosts = _generate_hosts()?;
         assert_eq!(wg_hosts[0].name, "foo1");
         assert_eq!(wg_hosts[1].name, "foo2");
+        Ok(())
     }
 
     #[test]
-    fn device_generation() {
-        let wg_hosts = _generate_hosts();
+    fn device_generation() -> anyhow::Result<()> {
+        let wg_hosts = _generate_hosts()?;
         let wg_device = WireguardDevice {
             name: "foo".to_string(),
             interface: wg_hosts[0].clone(),
@@ -287,11 +295,12 @@ mod tests {
         };
         assert_eq!(wg_device.name, "foo");
         assert_eq!(wg_hosts[0].name, "foo1");
+        Ok(())
     }
 
     #[test]
-    fn host_cloning() {
-        let wg_hosts = _generate_hosts();
+    fn host_cloning() -> anyhow::Result<()> {
+        let wg_hosts = _generate_hosts()?;
         let wg_h1 = &wg_hosts[0];
         let wg_h2 = &wg_hosts[1];
         let wg_device = WireguardDevice {
@@ -303,11 +312,12 @@ mod tests {
         assert_eq!(wg_hosts[0].name, "foo1");
         assert_eq!(wg_device.interface.keypair.public, wg_h1.keypair.public);
         assert_eq!(wg_device.interface.keypair.private, wg_h1.keypair.private);
+        Ok(())
     }
 
     #[test]
-    fn device_cloning() {
-        let wg_hosts = _generate_hosts();
+    fn device_cloning() -> anyhow::Result<()> {
+        let wg_hosts = _generate_hosts()?;
         let wg_h1 = &wg_hosts[0];
         let wg_h2 = &wg_hosts[1];
         let wg_device = WireguardDevice {
@@ -325,23 +335,25 @@ mod tests {
             wg_device.interface.keypair.private,
             wg_device2.interface.keypair.private
         );
+        Ok(())
     }
 
     #[test]
-    fn pubkey_generation() {
+    fn pubkey_generation() -> anyhow::Result<()> {
         // Use hardcoded privkey value, to compare results with
         // 'wg genkey | wg pubkey'
         let privkey = String::from("yPgz26A4S6RcniNaikFZrc0C0SyCW1moXmDP7AMeimE=");
         let expected_pubkey = "ISRq2SHZQDnSfV0VlmMEP4MbwfExE/iNHzthMQ7eNmY=";
         debug!("Expecting pubkey: {}", expected_pubkey);
-        let pubkey = derive_wireguard_pubkey(&privkey).unwrap();
+        let pubkey = derive_wireguard_pubkey(&privkey)?;
         debug!("Found pubkey: {}", pubkey);
         assert_eq!(pubkey, "ISRq2SHZQDnSfV0VlmMEP4MbwfExE/iNHzthMQ7eNmY=");
+        Ok(())
     }
 
     #[test]
-    fn key_generation() {
-        let kp = WireguardKeypair::new().unwrap();
+    fn key_generation() -> anyhow::Result<()> {
+        let kp = WireguardKeypair::new()?;
         assert!(!kp.public.ends_with('\n'));
         assert!(!kp.private.ends_with('\n'));
         // Slashes '/' will be rendered as hex value &#x2F if formatting is broken
@@ -351,17 +363,19 @@ mod tests {
         assert!(!kp.public.contains(r"&#x2F"));
         assert!(!kp.private.contains("&#x2F"));
         assert!(!kp.private.contains(r"&#x2F"));
+        Ok(())
     }
 
     #[test]
-    fn create_manager() {
+    fn create_manager() -> anyhow::Result<()> {
         // We'll assume the test host has no tunnels. The first
         // tunnel configured should be 10.50.0.1/30, assuming those
         // IP addrs are available on the system.
-        let mgr = WireguardManager::new("foo-service").unwrap();
-        let local_ip: IpAddr = "10.50.0.1".parse().unwrap();
+        let mgr = WireguardManager::new("foo-service")?;
+        let local_ip: IpAddr = "10.50.0.1".parse()?;
         assert!(mgr.wg_local_ip == local_ip);
-        let remote_ip: IpAddr = "10.50.0.2".parse().unwrap();
+        let remote_ip: IpAddr = "10.50.0.2".parse()?;
         assert!(mgr.wg_remote_ip == remote_ip);
+        Ok(())
     }
 }

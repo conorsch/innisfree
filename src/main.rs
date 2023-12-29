@@ -146,7 +146,7 @@ async fn main() -> Result<()> {
                     // info!("Server ready! IPv4 address: {}", f);
                 }
                 None => {
-                    let ip = &mgr.server.ipv4_address();
+                    let ip = &mgr.server.ipv4_address()?;
                     info!("Server ready! IPv4 address: {}", ip);
                 }
             }
@@ -204,8 +204,8 @@ async fn main() -> Result<()> {
             debug!("Blocking forever. Press ctrl+c to tear down the tunnel and destroy server.");
 
             // Block forever, ctrl+c will interrupt
-            let ports = config::ServicePort::from_str_multi(&ports).unwrap();
-            let local_ip: IpAddr = "127.0.0.1".parse().unwrap();
+            let ports = config::ServicePort::from_str_multi(&ports)?;
+            let local_ip: IpAddr = "127.0.0.1".parse()?;
             warn!("Ctrl+c will not halt proxy, use ctrl+z and `kill -9 %1`");
             info!("Starting proxy for services {:?}", ports);
             manager::run_proxy(local_ip, dest_ip, ports)

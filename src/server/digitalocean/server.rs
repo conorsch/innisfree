@@ -159,7 +159,8 @@ impl InnisfreeServer for Droplet {
 
         // The API logic could be abstracted further, in a DigitalOcean Manager.
         // Right now we only create Droplet resources, but an API Firewall would be nice.
-        let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
+        let api_key =
+            env::var("DIGITALOCEAN_API_TOKEN").context("DIGITALOCEAN_API_TOKEN not set.")?;
         let request_url = DO_API_BASE_URL;
         let client = reqwest::Client::new();
 
@@ -183,8 +184,7 @@ impl InnisfreeServer for Droplet {
 
     /// Retrieves the public IPv4 address for the Droplet.
     /// Technically can fail, if results are missing from the API response.
-    // TODO: IPv4 lookup can fail, should return Result to force handling.
-    fn ipv4_address(&self) -> IpAddr {
+    fn ipv4_address(&self) -> Result<IpAddr> {
         let mut s = String::new();
         for v4_network in &self.networks["v4"] {
             if v4_network["type"] == "public" {
@@ -192,8 +192,7 @@ impl InnisfreeServer for Droplet {
                 break;
             }
         }
-        let ip: IpAddr = s.parse().unwrap();
-        ip
+        Ok(s.parse()?)
     }
 
     async fn assign_floating_ip(&self, floating_ip: IpAddr) -> Result<()> {
@@ -212,7 +211,8 @@ impl InnisfreeServer for Droplet {
             warn!("No API pubkey associated with droplet, not destroying");
         }
 
-        let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
+        let api_key =
+            env::var("DIGITALOCEAN_API_TOKEN").context("DIGITALOCEAN_API_TOKEN not set.")?;
         let request_url = DO_API_BASE_URL.to_owned() + "/" + &self.id.to_string();
 
         let client = reqwest::Client::new();
@@ -232,7 +232,7 @@ impl InnisfreeServer for Droplet {
 /// Polls a droplet resource to get the latest data. Used during wait for boot,
 /// to capture networking info like PublicIPv4, which is assigned after creation.
 async fn get_droplet(droplet: &Droplet) -> Result<Droplet> {
-    let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
+    let api_key = env::var("DIGITALOCEAN_API_TOKEN").context("DIGITALOCEAN_API_TOKEN not set.")?;
     let request_url = DO_API_BASE_URL.to_owned() + "/" + &droplet.id.to_string();
 
     let client = reqwest::Client::new();

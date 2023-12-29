@@ -130,38 +130,37 @@ mod tests {
     // Helper function for reusable structs
     // This function is copied from src/wg.rs,
     // figure out a way to reuse it safely
-    fn _generate_hosts() -> Vec<WireguardHost> {
-        let kp1 = WireguardKeypair::new().unwrap();
+    fn _generate_hosts() -> Result<Vec<WireguardHost>> {
+        let kp1 = WireguardKeypair::new()?;
         let h1 = WireguardHost {
             name: "foo1".to_string(),
-            address: "127.0.0.1".parse().unwrap(),
-            endpoint: Some("1.1.1.1".parse().unwrap()),
+            address: "127.0.0.1".parse()?,
+            endpoint: Some("1.1.1.1".parse()?),
             listenport: 80,
             keypair: kp1,
         };
-        let kp2 = WireguardKeypair::new().unwrap();
+        let kp2 = WireguardKeypair::new()?;
         let h2 = WireguardHost {
             name: "foo2".to_string(),
-            address: "127.0.0.1".parse().unwrap(),
+            address: "127.0.0.1".parse()?,
             endpoint: None,
             listenport: 80,
             keypair: kp2,
         };
         let wg_hosts: Vec<WireguardHost> = vec![h1, h2];
-        wg_hosts
+        Ok(wg_hosts)
     }
 
     #[tokio::test]
-    async fn cloudconfig_has_header() {
-        let kp1 = SshKeypair::new("server-test1").unwrap();
-        let kp2 = SshKeypair::new("server-test2").unwrap();
-        let wg_mgr = WireguardManager::new("foo-test").unwrap();
+    async fn cloudconfig_has_header() -> Result<()> {
+        let kp1 = SshKeypair::new("server-test1")?;
+        let kp2 = SshKeypair::new("server-test2")?;
+        let wg_mgr = WireguardManager::new("foo-test")?;
         let ports = vec![];
-        let user_data = generate_user_data(&kp1, &kp2, &wg_mgr, &ports)
-            .await
-            .unwrap();
+        let user_data = generate_user_data(&kp1, &kp2, &wg_mgr, &ports).await?;
         assert!(user_data.ends_with(""));
         assert!(user_data.starts_with("#cloud-config"));
         assert!(user_data.starts_with("#cloud-config\n"));
+        Ok(())
     }
 }

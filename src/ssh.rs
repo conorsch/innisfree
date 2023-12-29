@@ -11,7 +11,7 @@ use osshkeys::cipher::Cipher;
 use osshkeys::keys::{KeyPair, KeyType};
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 /// Representation of an ED25519 SSH keypair.
@@ -47,14 +47,10 @@ impl SshKeypair {
         key_name
     }
     /// Store keypair on disk, in config dir.
-    pub fn write_locally(&self, service_name: &str) -> Result<String> {
+    pub fn write_locally(&self, service_name: &str) -> Result<PathBuf> {
         let config_dir = make_config_dir(service_name)?;
         let key_name = self.filename();
-        let privkey_filepath: String = Path::new(&config_dir)
-            .join(key_name)
-            .to_str()
-            .unwrap()
-            .to_string();
+        let privkey_filepath = Path::new(&config_dir).join(key_name);
 
         let mut fop = std::fs::OpenOptions::new();
         fop.write(true).create(true).truncate(true);
@@ -71,7 +67,7 @@ impl SshKeypair {
             .context("Failed to write SSH privkey")?;
 
         // Pubkey is public, so default umask is fine, expecting 644 or so.
-        let pubkey_filepath = String::from(&privkey_filepath) + ".pub";
+        let pubkey_filepath = privkey_filepath.join(".pub");
         std::fs::write(pubkey_filepath, &self.public)
             .map_err(|e| anyhow::Error::new(e).context("Failed to write SSH pubkey"))?;
         Ok(privkey_filepath)
@@ -83,8 +79,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn whitespace_is_stripped() {
-        let kp = SshKeypair::new("test1").unwrap();
+    fn whitespace_is_stripped() -> anyhow::Result<()> {
+        let kp = SshKeypair::new("test1")?;
         assert!(kp.private != kp.public);
         // trailing whitespace can screw up the yaml
         assert!(!kp.public.ends_with('\n'));
@@ -92,5 +88,6 @@ mod tests {
         // for privkey, that trailing newline is crucial.
         // lost an hour to debugging that
         assert!(kp.private.ends_with('\n'));
+        Ok(())
     }
 }

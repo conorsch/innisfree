@@ -42,7 +42,7 @@ pub async fn proxy_handler(listen_addr: SocketAddr, dest_addr: SocketAddr) -> Re
     debug!("Proxying traffic: {} -> {}", listen_addr, dest_addr);
     let listener = tokio::net::TcpListener::bind(&listen_addr).await?;
     while let Ok((inbound, _)) = listener.accept().await {
-        let transfer = transfer(inbound, dest_addr.clone()).map(|r| {
+        let transfer = transfer(inbound, dest_addr).map(|r| {
             if let Err(e) = r {
                 warn!("Proxy connection dropped, creating new handler: {}", e);
             }

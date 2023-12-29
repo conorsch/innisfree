@@ -31,8 +31,7 @@ impl ServicePort {
     pub fn from_str_multi(port_spec: &str) -> Result<Vec<ServicePort>> {
         Ok(port_spec
             .split(',')
-            .map(|s| ServicePort::try_from(s))
-            .flat_map(|x| x)
+            .flat_map(ServicePort::try_from)
             .collect())
     }
 }
@@ -85,10 +84,11 @@ impl TryFrom<&str> for ServicePort {
 /// Create local config dir, e.g. ~/.config/innisfree/,
 /// for storing state of active tunnels.
 pub fn make_config_dir(service_name: &str) -> Result<PathBuf> {
-    let mut config_dir = home::home_dir().unwrap();
-    config_dir.push(".config");
-    config_dir.push("innisfree");
-    config_dir.push(service_name);
+    let config_dir = home::home_dir()
+        .ok_or(anyhow::anyhow!("could not find home directory"))?
+        .join(".config")
+        .join("innisfree")
+        .join(service_name);
     std::fs::create_dir_all(&config_dir)?;
     Ok(config_dir)
 }

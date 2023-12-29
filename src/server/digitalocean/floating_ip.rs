@@ -25,7 +25,8 @@ impl FloatingIp {
     /// Attaches the Floating IP to the Droplet specified by [FloatingIp::droplet_id].
     /// Requires that the Floating IP already exists.
     pub async fn assign(&self) -> Result<()> {
-        let api_key = env::var("DIGITALOCEAN_API_TOKEN").expect("DIGITALOCEAN_API_TOKEN not set.");
+        let api_key =
+            env::var("DIGITALOCEAN_API_TOKEN").context("DIGITALOCEAN_API_TOKEN not set.")?;
         let req_body = json!({
             "type": "assign",
             "droplet_id": self.droplet_id,

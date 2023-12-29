@@ -34,7 +34,7 @@ pub trait InnisfreeServer {
 
     /// Returns the IPv4 address for the remote server. Used for both
     /// SSH connections and the remote Wireguard peer interface.
-    fn ipv4_address(&self) -> IpAddr;
+    fn ipv4_address(&self) -> Result<IpAddr>;
 
     /// Attaches a reserved IP to the remote server. Makes it easier
     /// to use DNS, since the record needs to be updated only once,

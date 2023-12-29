@@ -66,11 +66,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn subnet_generation() {
-        let n = generate_unused_subnet().unwrap();
+    fn subnet_generation() -> anyhow::Result<()> {
+        let n = generate_unused_subnet()?;
         // Ideally we'd test against 10.50.0.1/30, which is the same,
         // but breaks equality assertion.
-        let x: ipnet::IpNet = "10.50.0.0/30".parse().unwrap();
+        let x: ipnet::IpNet = "10.50.0.0/30".parse()?;
         assert_eq!(n, x);
+        Ok(())
     }
 }
