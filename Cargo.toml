@@ -1,6 +1,6 @@
 [package]
 name = "innisfree"
-version = "0.3.0-alpha.0"
+version = "0.3.0"
 authors = ["Conor Schaefer <conor@ruin.dev>"]
 edition = "2021"
 description = "Exposes local services on public IPv4 address, via cloud server."
@@ -12,14 +12,14 @@ categories = ["command-line-utilities", "network-programming"]
 keywords = ["self-hosting", "wireguard"]
 
 [dependencies]
-anyhow = "*"
+anyhow = "1"
 async-trait = "0.1"
 clap = { version = "4", features = ["env", "derive", "cargo"] }
 futures = "0.3"
 home = "~0.5"
 ipnet = "~2"
 log = "~0.4"
-osshkeys = { version = "*" }
+osshkeys = "0.7"
 pnet = "~0.28"
 rand = "~0.8"
 reqwest = { version = "0.11", features = ["json", "rustls"] }
