@@ -16,7 +16,7 @@ use std::thread;
 use std::time;
 
 use crate::config::ServicePort;
-use crate::server::cloudinit::generate_user_data;
+use crate::server::cloudinit::CloudConfig;
 use crate::server::digitalocean::floating_ip::FloatingIp;
 use crate::server::digitalocean::ssh_key::DigitalOceanSshKey;
 use crate::server::InnisfreeServer;
@@ -144,8 +144,10 @@ impl InnisfreeServer for Droplet {
         ssh_server_keypair: &SshKeypair,
     ) -> Result<Self> {
         tracing::debug!("Creating new DigitalOcean Droplet");
-        let user_data =
-            generate_user_data(ssh_client_keypair, ssh_server_keypair, &wg_mgr, &services).await?;
+        let user_data: String =
+            CloudConfig::new(ssh_client_keypair, ssh_server_keypair, &wg_mgr, &services)
+                .await?
+                .try_into()?;
         let do_ssh_key =
             DigitalOceanSshKey::new(name, &ssh_client_keypair.public.to_owned()).await?;
         let ssh_keys: Vec<u32> = vec![do_ssh_key.id];

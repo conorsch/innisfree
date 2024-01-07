@@ -209,9 +209,7 @@ impl TunnelManager {
     /// Execute a shell command on the remote server.
     fn run_ssh_cmd(&self, cmd: Vec<&str>) -> Result<()> {
         tracing::trace!("Entering run_ssh_cmd");
-        let ssh_kp = &self
-            .ssh_client_keypair
-            .write_locally(&self.name)?;
+        let ssh_kp = &self.ssh_client_keypair.write_locally(&self.name)?;
         let ssh_kp_s = ssh_kp.display().to_string();
         let known_hosts_opt = format!("UserKnownHostsFile={}", &self.known_hosts()?);
         let ipv4_address = &self.server.ipv4_address()?.to_string();

@@ -7,8 +7,7 @@ extern crate serde;
 use serde::{Deserialize, Serialize};
 
 use crate::config::ServicePort;
-// TODO the ssh key impl should be provider agnostic
-use crate::server::digitalocean::ssh_key::get_all_keys;
+
 use crate::ssh::SshKeypair;
 use crate::wg::WireguardManager;
 
@@ -26,7 +25,7 @@ pub struct CloudConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-/// Represents a ``write_file`` within the `CloudConfig`.
+/// Represents a `write_file` within the [`CloudConfig`].
 /// See documentation at <https://cloudinit.readthedocs.io/en/latest/topics/modules.html#write-files>.
 pub struct CloudConfigFile {
     content: String,
@@ -46,67 +45,69 @@ pub struct CloudConfigUser {
     ssh_authorized_keys: Vec<String>,
 }
 
-/// Returns a string representation of a cloudinit YAML file.
-pub async fn generate_user_data(
-    ssh_client_keypair: &SshKeypair,
-    ssh_server_keypair: &SshKeypair,
-    wg_mgr: &WireguardManager,
-    services: &[ServicePort],
-) -> Result<String> {
-    let user_data = include_str!("../../files/cloudinit.cfg");
-    let user_data = user_data.to_string();
+impl CloudConfig {
+    /// Create a cloud-init YAML file for a given tunnel config,
+    /// based on services.
+    pub async fn new(
+        ssh_client_keypair: &SshKeypair,
+        ssh_server_keypair: &SshKeypair,
+        wg_mgr: &WireguardManager,
+        services: &[ServicePort],
+    ) -> Result<Self> {
+        let cc_template = include_str!("../../files/cloudinit.cfg");
+        let mut cc = serde_yaml::from_str::<CloudConfig>(cc_template)?;
+        // TODO: add impl to SshKeypair for rendering this format?
+        cc.ssh_keys.insert(
+            "ed25520_public".to_string(),
+            ssh_server_keypair.public.to_string(),
+        );
+        cc.ssh_keys.insert(
+            "ed25519_private".to_string(),
+            ssh_server_keypair.private.to_string(),
+        );
+        let wg = CloudConfigFile {
+            // Use the template without firewall rules
+            content: wg_mgr.wg_remote_device.config()?,
+            owner: String::from("root:root"),
+            permissions: String::from("0644"),
+            path: String::from("/tmp/innisfree.conf"),
+        };
+        cc.write_files.push(wg);
+        let nginx = CloudConfigFile {
+            content: nginx_streams(services, wg_mgr.wg_local_device.interface.address)?,
+            owner: String::from("root:root"),
+            permissions: String::from("0644"),
+            path: String::from("/etc/nginx/conf.d/stream/innisfree.conf"),
+        };
+        cc.write_files.push(nginx);
 
-    let mut cloud_config = serde_yaml::from_str::<CloudConfig>(&user_data)?;
-    cloud_config.ssh_keys.insert(
-        "ed25519_public".to_string(),
-        ssh_server_keypair.public.to_string(),
-    );
-    cloud_config.ssh_keys.insert(
-        "ed25519_private".to_string(),
-        ssh_server_keypair.private.to_string(),
-    );
-
-    let wg = CloudConfigFile {
-        // Use the template without firewall rules
-        content: wg_mgr.wg_remote_device.config()?,
-        owner: String::from("root:root"),
-        permissions: String::from("0644"),
-        path: String::from("/tmp/innisfree.conf"),
-    };
-    cloud_config.write_files.push(wg);
-
-    let nginx = CloudConfigFile {
-        content: nginx_streams(services, wg_mgr.wg_local_device.interface.address)?,
-        owner: String::from("root:root"),
-        permissions: String::from("0644"),
-        path: String::from("/etc/nginx/conf.d/stream/innisfree.conf"),
-    };
-    cloud_config.write_files.push(nginx);
-
-    // Build list of pubkeys to add to cloudinit. There may be no keys
-    // returned from the API, e.g. during testing. That's fine,
-    // we'll just use the one we generated.
-    let mut cloud_config_ssh_keys = vec![ssh_client_keypair.public.to_string()];
-    match get_all_keys().await {
-        Ok(r) => {
-            for k in r {
-                cloud_config_ssh_keys.extend(vec![k.public_key.to_owned()]);
-            }
+        // Add generated SSH keypair for client login.
+        let mut cloud_config_ssh_keys = vec![ssh_client_keypair.public.to_string()];
+        // We'll also look up the associated pubkeys on the cloud account,
+        // and add those to the cloud-config, so operators can manage the machine
+        // as they manage other machines.
+        // TODO: remove this provider-specific logic via traits.
+        crate::server::digitalocean::ssh_key::get_all_keys()
+            .await?
+            .iter()
+            .for_each(|k| cloud_config_ssh_keys.extend(vec![k.public_key.to_owned()]));
+        if cloud_config_ssh_keys.len() == 1 {
+            tracing::warn!("No SSH pubkeys found via API");
         }
-        Err(e) => {
-            tracing::warn!("No SSH pubkeys found via API: {}", e);
-        }
+        cc.users[0].ssh_authorized_keys = vec![ssh_client_keypair.public.to_string()];
+
+        Ok(cc)
     }
+}
 
-    cloud_config.users[0].ssh_authorized_keys = cloud_config_ssh_keys;
+/// We implement a fallible conversion of [CloudConfig] to [String]
+/// so that `user_data` can be provided to cloud APIs.
+impl TryInto<String> for CloudConfig {
+    type Error = anyhow::Error;
 
-    let cc_rendered: String = serde_yaml::to_string(&cloud_config)?;
-    let cc_rendered_no_header = &cc_rendered.as_bytes()[4..];
-    let cc_rendered = std::str::from_utf8(cc_rendered_no_header)?;
-    let mut cc: String = String::from("#cloud-config");
-    cc.push('\n');
-    cc.push_str(cc_rendered);
-    Ok(cc)
+    fn try_into(self) -> anyhow::Result<String> {
+        Ok(format!("#cloud-config\n{}", serde_yaml::to_string(&self)?))
+    }
 }
 
 /// Generates an nginx stream configuration file as a string,
@@ -157,7 +158,8 @@ mod tests {
         let kp2 = SshKeypair::new("server-test2")?;
         let wg_mgr = WireguardManager::new("foo-test")?;
         let ports = vec![];
-        let user_data = generate_user_data(&kp1, &kp2, &wg_mgr, &ports).await?;
+        let cc = CloudConfig::new(&kp1, &kp2, &wg_mgr, &ports).await?;
+        let user_data: String = cc.try_into()?;
         assert!(user_data.ends_with(""));
         assert!(user_data.starts_with("#cloud-config"));
         assert!(user_data.starts_with("#cloud-config\n"));
