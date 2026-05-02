@@ -7,8 +7,8 @@
 
 use crate::config::make_config_dir;
 use anyhow::{Context, Result};
-use osshkeys::cipher::Cipher;
-use osshkeys::keys::{KeyPair, KeyType};
+use ssh_key::rand_core::OsRng;
+use ssh_key::{Algorithm, LineEnding, PrivateKey};
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
@@ -28,9 +28,9 @@ pub struct SshKeypair {
 impl SshKeypair {
     /// Generates a new ED25519 SSH keypair.
     pub fn new(prefix: &str) -> Result<SshKeypair> {
-        let kp = KeyPair::generate(KeyType::ED25519, 0)?;
-        let privkey = kp.serialize_openssh(None, Cipher::Null)?;
-        let pubkey = kp.serialize_publickey()?;
+        let kp = PrivateKey::random(&mut OsRng, Algorithm::Ed25519)?;
+        let privkey = kp.to_openssh(LineEnding::LF)?.to_string();
+        let pubkey = kp.public_key().to_openssh()?;
         Ok(SshKeypair {
             prefix: prefix.to_string(),
             private: privkey,
