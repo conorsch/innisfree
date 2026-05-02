@@ -144,10 +144,17 @@ impl InnisfreeServer for Droplet {
         ssh_server_keypair: &SshKeypair,
     ) -> Result<Self> {
         tracing::debug!("Creating new DigitalOcean Droplet");
-        let user_data: String =
-            CloudConfig::new(ssh_client_keypair, ssh_server_keypair, &wg_mgr, &services)
-                .await?
-                .try_into()?;
+        let mut cc =
+            CloudConfig::new(ssh_client_keypair, ssh_server_keypair, &wg_mgr, &services)?;
+        // Look up the SSH pubkeys associated with the cloud account, and
+        // authorize them on the new host so operators can manage it as they
+        // manage other machines.
+        let account_keys = crate::server::digitalocean::ssh_key::get_all_keys().await?;
+        if account_keys.is_empty() {
+            tracing::warn!("No SSH pubkeys found via API");
+        }
+        cc.authorize_ssh_keys(account_keys.into_iter().map(|k| k.public_key));
+        let user_data: String = cc.try_into()?;
         let do_ssh_key =
             DigitalOceanSshKey::new(name, &ssh_client_keypair.public.to_owned()).await?;
         let ssh_keys: Vec<u32> = vec![do_ssh_key.id];

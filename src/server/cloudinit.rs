@@ -3,7 +3,6 @@
 use std::net::IpAddr;
 
 use anyhow::{Context, Result};
-extern crate serde;
 use serde::{Deserialize, Serialize};
 
 use crate::config::ServicePort;
@@ -47,8 +46,10 @@ pub struct CloudConfigUser {
 
 impl CloudConfig {
     /// Create a cloud-init YAML file for a given tunnel config,
-    /// based on services.
-    pub async fn new(
+    /// based on services. The resulting config authorizes only
+    /// `ssh_client_keypair` for login; callers may add more authorized
+    /// keys via [`CloudConfig::authorize_ssh_keys`].
+    pub fn new(
         ssh_client_keypair: &SshKeypair,
         ssh_server_keypair: &SshKeypair,
         wg_mgr: &WireguardManager,
@@ -81,22 +82,22 @@ impl CloudConfig {
         };
         cc.write_files.push(nginx);
 
-        // Add generated SSH keypair for client login.
-        let mut cloud_config_ssh_keys = vec![ssh_client_keypair.public.to_string()];
-        // We'll also look up the associated pubkeys on the cloud account,
-        // and add those to the cloud-config, so operators can manage the machine
-        // as they manage other machines.
-        // TODO: remove this provider-specific logic via traits.
-        crate::server::digitalocean::ssh_key::get_all_keys()
-            .await?
-            .iter()
-            .for_each(|k| cloud_config_ssh_keys.extend(vec![k.public_key.to_owned()]));
-        if cloud_config_ssh_keys.len() == 1 {
-            tracing::warn!("No SSH pubkeys found via API");
-        }
         cc.users[0].ssh_authorized_keys = vec![ssh_client_keypair.public.to_string()];
 
         Ok(cc)
+    }
+
+    /// Append additional public keys to the primary user's
+    /// `authorized_keys`, e.g. operator keys fetched from a cloud
+    /// provider's account.
+    pub fn authorize_ssh_keys<I, S>(&mut self, public_keys: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.users[0]
+            .ssh_authorized_keys
+            .extend(public_keys.into_iter().map(Into::into));
     }
 }
 
@@ -152,16 +153,14 @@ mod tests {
         Ok(wg_hosts)
     }
 
-    #[tokio::test]
-    async fn cloudconfig_has_header() -> Result<()> {
+    #[test]
+    fn cloudconfig_has_header() -> Result<()> {
         let kp1 = SshKeypair::new("server-test1")?;
         let kp2 = SshKeypair::new("server-test2")?;
         let wg_mgr = WireguardManager::new("foo-test")?;
         let ports = vec![];
-        let cc = CloudConfig::new(&kp1, &kp2, &wg_mgr, &ports).await?;
+        let cc = CloudConfig::new(&kp1, &kp2, &wg_mgr, &ports)?;
         let user_data: String = cc.try_into()?;
-        assert!(user_data.ends_with(""));
-        assert!(user_data.starts_with("#cloud-config"));
         assert!(user_data.starts_with("#cloud-config\n"));
         Ok(())
     }
