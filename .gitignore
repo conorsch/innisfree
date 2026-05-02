@@ -17,5 +17,8 @@ debian/files
 files/droplet.json
 
 # Added by cargo
-
 /target
+
+# nix and friends
+.envrc
+/result
