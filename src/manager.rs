@@ -7,11 +7,10 @@ use crate::proxy::proxy_handler;
 use crate::server::digitalocean::server::Droplet;
 use crate::server::InnisfreeServer;
 use crate::ssh::SshKeypair;
-use crate::wg::WireguardManager;
+use crate::wg::{LocalWg, WireguardManager};
 use anyhow::{anyhow, Context, Result};
 use futures::future::join_all;
 use std::net::{IpAddr, SocketAddr, TcpStream};
-use std::path::PathBuf;
 use tokio::signal;
 
 /// Controller class for handling tunnel configurations.
@@ -33,6 +32,9 @@ pub struct TunnelManager {
     pub ssh_server_keypair: SshKeypair,
     /// Static IP to be attached to the server, for stable DNS entries on recreation.
     pub static_ip: Option<IpAddr>,
+    /// Live local Wireguard interface, populated by [`Self::up`].
+    /// Dropping it tears the interface down.
+    local_wg: Option<LocalWg>,
 }
 
 impl TunnelManager {
@@ -69,30 +71,36 @@ impl TunnelManager {
             ssh_server_keypair,
             static_ip,
             wg,
+            local_wg: None,
         })
     }
     /// Create remote and local infrastructure. Creates a cloud server,
     /// configures it to forward public ports over its Wireguard interface,
     /// to a local Wireguard interface
-    pub fn up(&self) -> Result<()> {
+    pub async fn up(&mut self) -> Result<()> {
         self.wait_for_ssh()?;
         tracing::debug!("Configuring remote proxy...");
         self.wait_for_cloudinit()
             .context("failed while waiting for cloudinit")?;
-        // Write out cloudinit config locally, for debugging
-        // self.server.write_user_data();
         let ip = self.server.ipv4_address()?;
         tracing::debug!("Configuring tunnel...");
-        let mut wg = self.wg.wg_local_device.clone();
-        wg.peer.endpoint = Some(ip);
-        wg.write_locally(&self.name, &self.services)
+        // Stamp the freshly-discovered remote IP onto the local
+        // device's peer config so the boringtun runtime can connect.
+        self.wg.wg_local_device.peer.endpoint = Some(ip);
+        // Persist the rendered wg0.conf for debugging / SSH inspection;
+        // the local runtime no longer reads it, but it remains useful.
+        self.wg
+            .wg_local_device
+            .write_locally(&self.name, &self.services)
             .context("failed to write wireguard configs")?;
         tracing::debug!("Bringing up remote Wireguard interface");
         self.bring_up_remote_wg()
             .context("failed to bring up remote wg interface")?;
         tracing::debug!("Bringing up local Wireguard interface");
-        self.bring_up_local_wg()
+        let local_wg = LocalWg::start(&self.wg.wg_local_device)
+            .await
             .context("failed to bring up local wg interface")?;
+        self.local_wg = Some(local_wg);
 
         tracing::trace!("Testing connection");
         self.test_connection()
@@ -123,7 +131,7 @@ impl TunnelManager {
     }
     /// Wait for an interrupt signal, then terminate gracefully,
     /// cleaning up droplet resources before exit.
-    pub async fn block(&self) -> Result<()> {
+    pub async fn block(&mut self) -> Result<()> {
         match signal::ctrl_c().await {
             Ok(()) => {
                 tracing::warn!("Received stop signal, exiting gracefully");
@@ -146,7 +154,7 @@ impl TunnelManager {
         std::process::Command::new("ping")
             .arg("-c1")
             .arg("-w5")
-            .arg(&ip.to_string())
+            .arg(ip.to_string())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
@@ -154,46 +162,13 @@ impl TunnelManager {
         tracing::debug!("Confirmed tunnel is established, able to ping across it");
         Ok(())
     }
-    /// Returns `PathBuf`, creating directory if necessary.
-    fn config_dir(&self) -> Result<PathBuf> {
-        make_config_dir(&self.name)
-    }
     /// Runs `wg-quick up` on remote server to bring up its Wireguard interface.
+    /// Remote node is still Debian + cloud-init + wg-quick (Phase 2 will
+    /// migrate it to NixOS); local side now uses the in-process runtime.
     fn bring_up_remote_wg(&self) -> Result<()> {
         let cmd = vec!["wg-quick", "up", "/tmp/innisfree.conf"];
         tracing::trace!("Activating remote wg interface");
         self.run_ssh_cmd(cmd)
-    }
-    /// Runs `wg-quick up` on localhost to bring up local Wireguard interface.
-    fn bring_up_local_wg(&self) -> Result<()> {
-        tracing::trace!("Bringing up local wg conn");
-        // Bring down in case the config was running with a different host
-        let _down = self.bring_down_local_wg();
-        tracing::trace!("Building path to local wg config");
-        // Bring down in case the config was running with a different host
-        let mut fpath = std::path::PathBuf::from(&self.config_dir()?);
-        fpath.push(format!("{}.conf", &self.name));
-        tracing::trace!("Running local wg-quick cmd");
-        std::process::Command::new("wg-quick")
-            .arg("up")
-            .arg(fpath.display().to_string())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()?;
-        Ok(())
-    }
-    /// Run `wg-quick down` on localhost to destroy local Wireguard interface.
-    fn bring_down_local_wg(&self) -> Result<()> {
-        let cmd = "wg-quick";
-        let fpath = make_config_dir(&self.name)?.join(format!("{}.conf", &self.name));
-        let fpath_s = &fpath.display().to_string();
-        std::process::Command::new(cmd)
-            .args(vec!["down", fpath_s])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .context("Failed to remove local Wireguard interface")?;
-        Ok(())
     }
     /// Generates an SSH known_hosts file, containing the automatically
     /// generated SSH hostkey for the remote server. Doing so allows
@@ -235,10 +210,11 @@ impl TunnelManager {
     }
     /// Destroys all infrastructure, including local Wireguard interfaces,
     /// remote server, and local config dir.
-    pub async fn clean(&self) -> Result<()> {
+    pub async fn clean(&mut self) -> Result<()> {
         tracing::debug!("removing local Wireguard interface");
-        // Ignore errors, since we want to try all handlers
-        let _ = self.bring_down_local_wg();
+        // Drop the runtime: boringtun's DeviceHandle::Drop tears down
+        // the TUN device and joins worker threads.
+        self.local_wg = None;
         let _ = self.server.destroy().await;
         clean_config_dir(&self.name)?;
         Ok(())

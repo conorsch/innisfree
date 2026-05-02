@@ -3,14 +3,17 @@
 //! for configuring interfaces ([WireguardHost]),
 
 use anyhow::{Context, Result};
-use std::io::prelude::*;
+use base64::Engine as _;
+use std::io::Write as _;
 use std::net::IpAddr;
-use std::process::{Command, Stdio};
-use std::str;
 
 use crate::config::{make_config_dir, ServicePort};
 use crate::net::generate_unused_subnet;
 use serde::Serialize;
+use x25519_dalek::{PublicKey, StaticSecret};
+
+mod runtime;
+pub use runtime::LocalWg;
 
 const WIREGUARD_LISTEN_PORT: i32 = 51820;
 
@@ -25,15 +28,40 @@ pub struct WireguardKeypair {
 }
 
 impl WireguardKeypair {
-    /// Generate a new ED25519 keypair for use as a Wireguard identity.
+    /// Generate a new Curve25519 keypair for use as a Wireguard identity.
     pub fn new() -> Result<WireguardKeypair> {
-        let privkey = generate_wireguard_privkey()?;
-        let pubkey = derive_wireguard_pubkey(&privkey)?;
+        let secret = StaticSecret::random_from_rng(rand_core::OsRng);
+        let public = PublicKey::from(&secret);
         Ok(WireguardKeypair {
-            private: privkey,
-            public: pubkey,
+            private: encode_key(secret.as_bytes()),
+            public: encode_key(public.as_bytes()),
         })
     }
+
+    /// Returns the private key as a 32-byte array, ready for use with
+    /// `x25519_dalek::StaticSecret::from` or boringtun's UAPI.
+    pub fn private_bytes(&self) -> Result<[u8; 32]> {
+        decode_key(&self.private).context("failed to decode wg private key")
+    }
+
+    /// Returns the public key as a 32-byte array.
+    pub fn public_bytes(&self) -> Result<[u8; 32]> {
+        decode_key(&self.public).context("failed to decode wg public key")
+    }
+}
+
+/// Encode a 32-byte Wireguard key to standard base64 (no padding stripped),
+/// matching the format produced by `wg genkey` / `wg pubkey`.
+fn encode_key(bytes: &[u8]) -> String {
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+/// Decode a base64-encoded 32-byte Wireguard key.
+fn decode_key(s: &str) -> Result<[u8; 32]> {
+    let raw = base64::engine::general_purpose::STANDARD.decode(s.trim())?;
+    raw.as_slice()
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("expected 32-byte key, got {}", raw.len()))
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -74,7 +102,7 @@ impl WireguardDevice {
     /// as `wg0.conf`. In our case, on disk it is usually called `innisfree.conf`.
     /// In practice, this config file is used by the local end of the Innisfree tunnel.
     pub fn config(&self) -> Result<String> {
-        let wg_template = include_str!("../files/wg0.conf.j2");
+        let wg_template = include_str!("../../files/wg0.conf.j2");
         let mut context = tera::Context::new();
         context.insert("wireguard_device", &self);
         // Firewall rules are mostly important from client side,
@@ -90,7 +118,7 @@ impl WireguardDevice {
     /// that includes firewall rules restrictions for the services
     /// being proxied.
     pub fn config_with_services(&self, services: &[ServicePort]) -> Result<String> {
-        let wg_template = include_str!("../files/wg0.conf.j2");
+        let wg_template = include_str!("../../files/wg0.conf.j2");
         let mut context = tera::Context::new();
         context.insert("wireguard_device", &self);
         context.insert("services", &services);
@@ -104,7 +132,7 @@ impl WireguardDevice {
     pub fn write_locally(&self, service_name: &str, services: &[ServicePort]) -> Result<()> {
         let wg_config_path = make_config_dir(service_name)?.join(format!("{}.conf", service_name));
         let mut f = std::fs::File::create(&wg_config_path)?;
-        f.write_all(&self.config_with_services(services)?.as_bytes())?;
+        f.write_all(self.config_with_services(services)?.as_bytes())?;
         Ok(())
     }
 }
@@ -180,47 +208,6 @@ impl WireguardManager {
             wg_remote_device,
         })
     }
-}
-
-/// Create a new ED25519 private key via ``wg genkey``.
-fn generate_wireguard_privkey() -> Result<String> {
-    // Call out to "wg genkey" and collect output.
-    // Ideally we'd generate these values in pure Rust, but
-    // calling out to wg as a first draft.
-    let privkey_cmd = std::process::Command::new("wg")
-        .args(["genkey"])
-        .output()
-        .context("Failed to generate Wireguard keypair")?;
-    let privkey: String = str::from_utf8(&privkey_cmd.stdout)?.trim().to_string();
-    Ok(privkey)
-}
-
-/// Return an ED25519 public key from an ED25519 private key,
-/// via ``wg pubkey``.
-fn derive_wireguard_pubkey(privkey: &str) -> Result<String> {
-    // Open a pipe to 'wg genkey', to pass in the privkey
-    let pubkey_cmd = Command::new("wg")
-        .args(["pubkey"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()?;
-
-    // Write wg privkey to stdin on pubkey process
-    pubkey_cmd
-        .stdin
-        .ok_or(anyhow::anyhow!("failed to open stdin on wg pubkey command"))?
-        .write_all(privkey.as_bytes())?;
-
-    let mut pubkey = String::new();
-    pubkey_cmd
-        .stdout
-        .ok_or(anyhow::anyhow!(
-            "failed to open stdout on wg pubkey command"
-        ))?
-        .read_to_string(&mut pubkey)?;
-
-    pubkey = pubkey.trim().to_string();
-    Ok(pubkey)
 }
 
 #[cfg(test)]
@@ -337,14 +324,11 @@ mod tests {
 
     #[test]
     fn pubkey_generation() -> anyhow::Result<()> {
-        // Use hardcoded privkey value, to compare results with
-        // 'wg genkey | wg pubkey'
-        let privkey = String::from("yPgz26A4S6RcniNaikFZrc0C0SyCW1moXmDP7AMeimE=");
-        let expected_pubkey = "ISRq2SHZQDnSfV0VlmMEP4MbwfExE/iNHzthMQ7eNmY=";
-        tracing::debug!("Expecting pubkey: {}", expected_pubkey);
-        let pubkey = derive_wireguard_pubkey(&privkey)?;
-        tracing::debug!("Found pubkey: {}", pubkey);
-        assert_eq!(pubkey, "ISRq2SHZQDnSfV0VlmMEP4MbwfExE/iNHzthMQ7eNmY=");
+        // Hardcoded test vector, matches the output of `wg genkey | wg pubkey`.
+        let privkey_b64 = "yPgz26A4S6RcniNaikFZrc0C0SyCW1moXmDP7AMeimE=";
+        let secret = StaticSecret::from(decode_key(privkey_b64)?);
+        let public = encode_key(PublicKey::from(&secret).as_bytes());
+        assert_eq!(public, "ISRq2SHZQDnSfV0VlmMEP4MbwfExE/iNHzthMQ7eNmY=");
         Ok(())
     }
 

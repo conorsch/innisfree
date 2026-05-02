@@ -127,10 +127,10 @@ async fn main() -> Result<()> {
             let name = clean_name(&name);
 
             tracing::info!("Creating server '{}'", &name);
-            let mgr: manager::TunnelManager =
+            let mut mgr: manager::TunnelManager =
                 manager::TunnelManager::new(&name, services, floating_ip).await?;
             tracing::info!("Configuring server");
-            match mgr.up() {
+            match mgr.up().await {
                 Ok(_) => {
                     tracing::trace!("Up reports success");
                 }

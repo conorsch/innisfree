@@ -51,7 +51,7 @@ impl SshKeypair {
         let config_dir = make_config_dir(service_name).context("failed to create config dir")?;
 
         // Write SSH privkey.
-        let privkey_filepath = Path::new(&config_dir).join(&self.filename());
+        let privkey_filepath = Path::new(&config_dir).join(self.filename());
         let mut privkey = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -60,7 +60,7 @@ impl SshKeypair {
             .open(&privkey_filepath)
             .context("failed to open privkey filepath for writing")?;
         privkey
-            .write_all(&self.private.as_bytes())
+            .write_all(self.private.as_bytes())
             .context("Failed to write SSH privkey")?;
 
         // Write SSH pubkey.
@@ -73,7 +73,7 @@ impl SshKeypair {
             .open(&pubkey_filepath)
             .context("failed to open pubkey filepath for writing")?;
         pubkey
-            .write_all(&self.public.as_bytes())
+            .write_all(self.public.as_bytes())
             .context("failed to write SSH pubkey")?;
         Ok(privkey_filepath)
     }

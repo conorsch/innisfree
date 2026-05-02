@@ -50,13 +50,20 @@ make install
 Requirements
 ------------
 
-1. Linux-only. Even if the binary compiles under macOS, userspace
-   implementations of Wireguard are still up-and-coming.
-2. [Wireguard]. For most modern Linux distros, this is available
-   out of the box. Notably, Debian Stable Buster 10 lacks it,
-   but it's available in the buster-backports repo. Run
-   `innisfree doctor` to check support your machine.
+1. Linux-only. The local Wireguard endpoint runs in-process via
+   [boringtun], so neither the kernel `wireguard` module nor the
+   `wireguard-tools` userspace are required on the host.
+2. The binary needs `CAP_NET_ADMIN` to open `/dev/net/tun` and
+   configure the link. Either:
+     * `setcap cap_net_admin+ep $(which innisfree)` (the deb postinst
+       does this for you), or
+     * run via the shipped systemd unit, which sets
+       `AmbientCapabilities=CAP_NET_ADMIN`, or
+     * run as root.
+   `innisfree doctor` reports whether the cap is held.
 3. A [DigitalOcean] cloud account, to create a server.
+
+[boringtun]: https://github.com/cloudflare/boringtun
 
 Usage
 -----

@@ -1,32 +1,55 @@
-//! Utility functions for detecting dependencies.
-//! Checks whether Wireguard is installed, whether
-//! a cloud provider authorization token is present.
+//! Pre-flight checks for the local environment.
+//!
+//! Validates that the binary has the privileges it needs to bring up
+//! a Wireguard interface in-process via boringtun, and that the
+//! cloud-provider credentials are available.
 
 use anyhow::Result;
+use std::fs;
 
-/// Checks that `wg-quick` is found on `$PATH`.
-/// Also checks that `DIGITALOCEAN_API_TOKEN` environment
-/// variable is set.
+/// Linux capability bit for `CAP_NET_ADMIN`. See `capabilities(7)`.
+const CAP_NET_ADMIN: u64 = 12;
+
+/// Run all platform checks. Returns `Ok(true)` if everything looks
+/// good, `Ok(false)` if any non-fatal check failed (logged via
+/// `tracing::warn!`).
 pub fn platform_is_supported() -> Result<bool> {
-    let mut result: bool = std::env::var("DIGITALOCEAN_API_TOKEN").is_ok();
-    if check_if_command_exists("wg-quick") {
-        tracing::info!("Wireguard appears to be installed!");
+    let mut ok = true;
+
+    if has_cap_net_admin()? {
+        tracing::info!("CAP_NET_ADMIN is held — local Wireguard interface can be created");
     } else {
-        tracing::warn!("Wireguard does not appear to be installed");
-        result = false;
+        tracing::warn!(
+            "CAP_NET_ADMIN is not held — boringtun cannot open /dev/net/tun. \
+             Fix with one of:\n  \
+             setcap cap_net_admin+ep $(which innisfree)\n  \
+             systemd: AmbientCapabilities=CAP_NET_ADMIN in the unit file"
+        );
+        ok = false;
     }
-    Ok(result)
+
+    if std::env::var("DIGITALOCEAN_API_TOKEN").is_ok() {
+        tracing::info!("DIGITALOCEAN_API_TOKEN is set");
+    } else {
+        tracing::warn!("DIGITALOCEAN_API_TOKEN is not set — server provisioning will fail");
+        ok = false;
+    }
+
+    Ok(ok)
 }
 
-/// Search for given program on `$PATH`.
-fn check_if_command_exists(cmd: &str) -> bool {
-    std::process::Command::new(cmd)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        // All we care about is whether we found the command,
-        // so treat all errors as "nope".
-        .is_ok()
+/// Read the effective capability set from `/proc/self/status` and
+/// return whether `CAP_NET_ADMIN` is held. Avoids pulling in the full
+/// `caps` crate for a one-bit check.
+fn has_cap_net_admin() -> Result<bool> {
+    let status = fs::read_to_string("/proc/self/status")?;
+    for line in status.lines() {
+        if let Some(rest) = line.strip_prefix("CapEff:\t") {
+            let bits = u64::from_str_radix(rest.trim(), 16)?;
+            return Ok(bits & (1u64 << CAP_NET_ADMIN) != 0);
+        }
+    }
+    Ok(false)
 }
 
 #[cfg(test)]
@@ -34,12 +57,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn wireguard_exists() {
-        assert!(check_if_command_exists("wg-quick"));
-    }
-
-    #[test]
-    fn missing_cmd_does_not_exist() {
-        assert!(!check_if_command_exists("wg-quick2"));
+    fn cap_check_does_not_panic() {
+        // We don't assert the result — CI may or may not grant the
+        // capability — only that the read+parse path is sound.
+        let _ = has_cap_net_admin().unwrap();
     }
 }
