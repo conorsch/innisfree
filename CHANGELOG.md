@@ -1,5 +1,10 @@
 # Innisfree changelog
 
+## 0.3.1
+* dev: add nix flake for devshell
+* build: statically linked binary via nix
+* test: env var api tokens no longer required for tests
+
 ## 0.3.0
 * Add support for different local and remote port pairs, e.g. `80:8000`.
 * Dev: refactor InnisfreeServer as trait, implemented on Droplet.
