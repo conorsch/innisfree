@@ -1,5 +1,11 @@
 # Innisfree changelog
 
+## 0.4.0
+
+* feat: use boringtun for userspace wireguard
+* test: rewrite integration tests in rust
+* fix: update debian-11 -> debian-13
+
 ## 0.3.1
 * dev: add nix flake for devshell
 * build: statically linked binary via nix
