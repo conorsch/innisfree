@@ -2,7 +2,7 @@
   description = "innisfree — expose local services on a public IPv4 address via a cloud server";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     flake-utils.url = "github:numtide/flake-utils";
     crane.url = "github:ipetkov/crane";
     rust-overlay = {
@@ -138,9 +138,10 @@
             wireguard-tools
             # `ldd` for the `--features nix` static-linkage test.
             glibc.bin
-            cargo-watch
-            cargo-edit
             cargo-deb
+            cargo-edit
+            cargo-nextest
+            cargo-watch
             rust-analyzer
           ];
 

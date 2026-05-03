@@ -110,8 +110,12 @@ fn sanitize_iface_name(raw: &str) -> Result<String> {
         return Err(anyhow!("interface name is empty"));
     }
     if raw.len() > IFNAMSIZ {
+        // Defensive: WireguardManager::new now produces names like
+        // `innisfree<N>` which always fit, but this guard remains so a
+        // future code path that builds the name some other way can't
+        // silently truncate (and collide with another iface).
         return Err(anyhow!(
-            "interface name '{raw}' exceeds Linux IFNAMSIZ ({IFNAMSIZ}); pick a shorter --name"
+            "interface name '{raw}' exceeds Linux IFNAMSIZ ({IFNAMSIZ})"
         ));
     }
     Ok(raw.to_string())

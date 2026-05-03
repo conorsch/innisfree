@@ -21,6 +21,11 @@ pub struct CloudConfig {
     ssh_keys: std::collections::HashMap<String, String>,
     write_files: Vec<CloudConfigFile>,
     packages: Vec<String>,
+    /// Shell commands to run during cloud-init's `modules-final` stage,
+    /// after package install and after any `defer`'d `write_files`. Used to
+    /// restart services whose configs depend on packages we just installed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    runcmd: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -31,6 +36,13 @@ pub struct CloudConfigFile {
     owner: String,
     path: String,
     permissions: String,
+    /// If `Some(true)`, write this file in `modules-final` (after package
+    /// install) rather than the default `modules-config` (before). Needed
+    /// for configs whose presence at install time would cause a package
+    /// postinst to fail — e.g. `/etc/nginx/nginx.conf` referencing
+    /// directives provided by a module that hasn't been configured yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    defer: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -59,7 +71,7 @@ impl CloudConfig {
         let mut cc = serde_yaml::from_str::<CloudConfig>(cc_template)?;
         // TODO: add impl to SshKeypair for rendering this format?
         cc.ssh_keys.insert(
-            "ed25520_public".to_string(),
+            "ed25519_public".to_string(),
             ssh_server_keypair.public.to_string(),
         );
         cc.ssh_keys.insert(
@@ -72,6 +84,7 @@ impl CloudConfig {
             owner: String::from("root:root"),
             permissions: String::from("0644"),
             path: String::from("/tmp/innisfree.conf"),
+            defer: None,
         };
         cc.write_files.push(wg);
         let nginx = CloudConfigFile {
@@ -79,6 +92,7 @@ impl CloudConfig {
             owner: String::from("root:root"),
             permissions: String::from("0644"),
             path: String::from("/etc/nginx/conf.d/stream/innisfree.conf"),
+            defer: None,
         };
         cc.write_files.push(nginx);
 

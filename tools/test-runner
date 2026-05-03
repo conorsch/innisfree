@@ -1,63 +1,33 @@
-#!/bin/bash
-# For debugging proxy.rs
-
+#!/usr/bin/env bash
+#
+# Wrapper for the `simple_http_server_is_remotely_accessible` integration
+# test in `tests/integration_test.rs`. The test spawns `innisfree up`, which
+# needs CAP_NET_ADMIN to bring up the userspace wireguard TUN. Rather than
+# running the entire test suite as root, this wrapper builds the binary and
+# applies the capabilities once via sudo, then invokes `cargo test` as the
+# regular user.
+#
+# Set DIGITALOCEAN_API_TOKEN before running. Extra args are forwarded to
+# `cargo test` after the `--ignored` separator (e.g. `--nocapture` is on by
+# default; pass `--test-threads=1` to add more).
 set -euo pipefail
-set -x
 
-export RUST_LOG=innisfree=trace
-export OPENSSL_STATIC=1
+cd "$(dirname "$0")/.."
 
-# Declare TCP port to check over
-local_port="8080"
-
-# Make sure anything that wasn't cleaned up is killed
-netstat -lnp | grep -iF "$local_port" | perl -lanE 'say $F[-1]' | grep -oP '^\d+' \
-    | xargs -d '\n' -r kill || true
-
-# Prepare test dir
-dst_dir="$(mktemp -d)"
-test_string="Hello, world! $(uuid)"
-echo "$test_string" > "${dst_dir}/index.html"
-
-# Make sure to clean up afterwards
-cleanup() {
-    # disable 'set -e' to ensure all these cleanup tasks run
-    set +e
-    jobs -p | xargs -r kill
-    rm -rf "$dst_dir"
-    reset
-}
-trap 'cleanup' EXIT
-
-# We don't use 'cargo run' because we want SIGINT to tear down the process.
-# Wrapping innisfree in 'cargo run' may interfere with signal handling.
-cargo build
-sudo setcap CAP_NET_BIND_SERVICE,CAP_NET_ADMIN=+ep ./target/debug/innisfree
-./target/debug/innisfree up -p "$local_port" &
-sleep 90
-
-# Host webroot containing test string
-python3 -m http.server --directory "$dst_dir" "$local_port" &
-sleep 1
-
-# Make sure we find the unique test string,
-# over both localhost (as control) and remote IP.
-curl -I "http://localhost:${local_port}"
-result_string="$(curl -s --connect-timeout 3 --max-time 5 "http://$(cargo run -- ip):${local_port}")"
-result=0
-if [[ "$test_string" != "$result_string" ]] ; then
-    echo "ERROR: Failed to find test string: '$test_string'" >&2
-    jobs -p | xargs -r kill
-    result=1
-else
-    echo "SUCCESS: Found test string: '$test_string'" >&2
-    echo "Cleaning up..." >&2
-    # use SIGINT to kill because I haven't figured out how to catch other signals
-    jobs -p | xargs -r kill -s SIGINT
-    sleep 5
-    result=0
+if [ -z "${DIGITALOCEAN_API_TOKEN:-}" ]; then
+    echo "ERROR: DIGITALOCEAN_API_TOKEN must be set" >&2
+    exit 1
 fi
 
-cleanup
-wait
-exit "$result"
+# Compile the test artifacts — including the `innisfree` bin in its test-
+# time feature configuration — without running them. `cargo test` adds
+# dev-dependencies to the dependency graph, which can change the feature
+# unification of upstream crates (notably `tokio`, which we union with
+# `process` + `time` for the integration test). That changes the bin's
+# build inputs, so a plain `cargo build` followed by `cargo test` would
+# rebuild and replace the binary, dropping the file capabilities below.
+# `--no-run` produces the exact same artifacts `cargo test` will use, so
+# the subsequent setcap survives.
+cargo test --no-run --features integration --test integration_test
+sudo setcap CAP_NET_BIND_SERVICE,CAP_NET_ADMIN=+ep target/debug/innisfree
+exec cargo test --features integration --test integration_test -- --nocapture "$@"
