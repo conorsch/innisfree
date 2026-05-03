@@ -119,9 +119,9 @@ async fn main() -> Result<()> {
             dest_ip,
             floating_ip,
         } => {
-            // Ensure DigitalOcean API token is defined
-            let _do_token = env::var("DIGITALOCEAN_API_TOKEN")
-                .context("DIGITALOCEAN_API_TOKEN env var not set");
+            // Ensure DigitalOcean API token is defined; fail fast if not.
+            env::var("DIGITALOCEAN_API_TOKEN")
+                .context("DIGITALOCEAN_API_TOKEN env var not set")?;
             let services = config::ServicePort::from_str_multi(&ports)?;
             tracing::info!("Will provide proxies for {:?}", services);
             let name = clean_name(&name);
@@ -135,7 +135,11 @@ async fn main() -> Result<()> {
                     tracing::trace!("Up reports success");
                 }
                 Err(e) => {
-                    tracing::error!("Failed bringing up tunnel: {}", e);
+                    // `{:#}` includes the anyhow context chain on one line;
+                    // plain `{}` only prints the outer wrap and hides the
+                    // underlying cause (was masking real LocalWg::start
+                    // errors during integration tests).
+                    tracing::error!("Failed bringing up tunnel: {:#}", e);
                     // Error probably unrecoverable
                     tracing::warn!("Attempting to exit gracefully...");
                     mgr.clean().await?;

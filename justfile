@@ -4,7 +4,7 @@ container:
 
 # run unit tests
 test:
-    cargo test
+    cargo nextest run
 
 # run linters
 check:
@@ -12,6 +12,8 @@ check:
   cargo clippy --all-features --all-targets
   cargo fmt --check
 
-# run all tests
+# run the live integration test (builds, applies setcap via sudo, then
+# `cargo test --test integration_test --ignored`). Provisions a real
+# DigitalOcean droplet — DIGITALOCEAN_API_TOKEN must be set.
 integration:
-    cargo test -- --ignored
+    ./tools/test-runner

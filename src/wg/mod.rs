@@ -2,10 +2,11 @@
 //! Includes methods for generating keypairs ([`WireguardKeypair::new`]),
 //! for configuring interfaces ([WireguardHost]),
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use base64::Engine as _;
 use std::io::Write as _;
 use std::net::IpAddr;
+use std::path::Path;
 
 use crate::config::{make_config_dir, ServicePort};
 use crate::net::generate_unused_subnet;
@@ -164,7 +165,13 @@ impl WireguardManager {
         let s = wg_subnet.hosts().collect::<Vec<IpAddr>>();
 
         let wg_local_ip = s[0];
-        let wg_local_name = format!("innisfree-{}-local", service_name);
+        // Decouple the kernel-visible interface name from `service_name`:
+        // user-provided names + the `innisfree-` / `-local` adornments would
+        // routinely overflow Linux's IFNAMSIZ (15). Pick a short, fixed-shape
+        // name (`innisfree<N>`) where N is the smallest integer not already
+        // taken by an existing interface. Service identity stays in
+        // `service_name` and the per-tunnel config dir.
+        let wg_local_name = pick_local_iface_name()?;
         let wg_local_keypair = WireguardKeypair::new()?;
         let wg_local_host = WireguardHost {
             name: wg_local_name.to_owned(),
@@ -208,6 +215,30 @@ impl WireguardManager {
             wg_remote_device,
         })
     }
+}
+
+/// Pick the lowest unused `innisfree<N>` interface name. The pattern is
+/// always 10–11 characters, well under IFNAMSIZ (15), regardless of what
+/// the user named their tunnel.
+///
+/// Existence is detected via `/sys/class/net/<name>` rather than a netlink
+/// dump — `/sys/class/net` is world-readable on every modern Linux and
+/// keeps this function dep-free and callable from `WireguardManager::new`
+/// (which is sync). Stale interfaces left behind by a crashed prior run
+/// will simply be skipped over until the user `ip link delete`s them; with
+/// 100 slots that's plenty of headroom in practice.
+fn pick_local_iface_name() -> Result<String> {
+    const MAX_SLOTS: u32 = 100;
+    for n in 0..MAX_SLOTS {
+        let candidate = format!("innisfree{n}");
+        if !Path::new(&format!("/sys/class/net/{candidate}")).exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(anyhow!(
+        "no free interface name in innisfree[0..{MAX_SLOTS}); \
+         clean up stale ones with `sudo ip link delete <name>`"
+    ))
 }
 
 #[cfg(test)]

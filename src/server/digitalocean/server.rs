@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use reqwest;
 use serde;
 use serde_json;
@@ -31,7 +31,7 @@ pub const DO_REGION: &str = "sfo2";
 pub const DO_SIZE: &str = "s-1vcpu-1gb";
 /// The OS choice for to base the Droplet on. Defaults to most recent Debian Stable.
 /// See docs for more info: <https://docs.digitalocean.com/reference/api/api-reference/#tag/Images>.
-pub const DO_IMAGE: &str = "debian-11-x64";
+pub const DO_IMAGE: &str = "debian-13-x64";
 const DO_API_BASE_URL: &str = "https://api.digitalocean.com/v2/droplets";
 
 /// Representation of a DigitalOcean Droplet, i.e. cloud VM.
@@ -115,19 +115,13 @@ impl Droplet {
         // will be populated. Might be a good use of enums here.
         loop {
             thread::sleep(time::Duration::from_secs(10));
-            match get_droplet(self).await {
-                Ok(droplet) => {
-                    if droplet.status == "active" {
-                        return Ok(droplet);
-                    } else {
-                        tracing::info!("Server still booting, waiting...");
-                        continue;
-                    }
-                }
-                Err(_) => {
-                    return Err(anyhow!("Unknown error while waiting for droplet boot"));
-                }
+            let droplet = get_droplet(self)
+                .await
+                .context("polling droplet boot status")?;
+            if droplet.status == "active" {
+                return Ok(droplet);
             }
+            tracing::info!("Server still booting, waiting...");
         }
     }
 }

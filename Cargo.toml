@@ -15,6 +15,10 @@ keywords = ["self-hosting", "wireguard"]
 # Enables tests that only make sense against a binary built via the flake
 # (currently: asserting the binary is fully statically linked).
 nix = []
+# Enables the live end-to-end test in `tests/integration_test.rs`. The test
+# provisions a real DigitalOcean droplet, so it requires DIGITALOCEAN_API_TOKEN
+# and CAP_NET_ADMIN on the binary. Run via `tools/test-runner`.
+integration = []
 
 [dependencies]
 anyhow = "1"
@@ -40,6 +44,17 @@ tokio = { version = "1.27", features = [ "io-util", "macros", "net", "rt-multi-t
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "ansi"] }
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
+
+[dev-dependencies]
+# `tokio::process::Child` exposes kill() but not arbitrary signals; we need
+# to send SIGINT to `innisfree up` so it can gracefully destroy the cloud
+# droplet during integration-test teardown.
+libc = "0.2"
+# Add `process` + `time` to the tokio feature set used at test build time:
+# the integration test orchestrates `innisfree up` as a child process and
+# polls/retries with deadlines. Cargo unions these with the runtime feature
+# list above.
+tokio = { version = "1.27", features = ["process", "time"] }
 
 [package.metadata.deb]
 maintainer-scripts = "debian/"

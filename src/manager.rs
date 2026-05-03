@@ -8,7 +8,7 @@ use crate::server::digitalocean::server::Droplet;
 use crate::server::InnisfreeServer;
 use crate::ssh::SshKeypair;
 use crate::wg::{LocalWg, WireguardManager};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use futures::future::join_all;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use tokio::signal;
@@ -103,7 +103,28 @@ impl TunnelManager {
         self.local_wg = Some(local_wg);
 
         tracing::trace!("Testing connection");
-        self.test_connection()
+        self.test_connection()?;
+        // The `ip` marker is the readiness signal for `innisfree ip` (and
+        // anything polling it, like the integration test). Writing it here
+        // — only after `test_connection` confirms the wg tunnel pings end
+        // to end — guarantees a successful `innisfree ip` means the tunnel
+        // is actually usable, not just that a known_hosts file got written
+        // as a side effect during the cloud-init wait.
+        self.write_ready_marker()
+            .context("writing ready marker after tunnel came up")?;
+        Ok(())
+    }
+
+    /// Persist the public IPv4 address of the cloud node to a small file
+    /// in the per-tunnel config dir. Used by [`get_server_ip`] (and thus
+    /// `innisfree ip` / `innisfree ssh`) as both the IP source and the
+    /// readiness signal.
+    fn write_ready_marker(&self) -> Result<()> {
+        let ip = self.server.ipv4_address()?;
+        let fpath = make_config_dir(&self.name)?.join("ip");
+        std::fs::write(&fpath, format!("{ip}\n"))
+            .with_context(|| format!("writing ready marker {}", fpath.display()))?;
+        Ok(())
     }
     /// Blocks until the server's cloudinit process reports completion.
     fn wait_for_cloudinit(&self) -> Result<()> {
@@ -181,13 +202,18 @@ impl TunnelManager {
         std::fs::write(&fpath, host_line).context("Failed to create known_hosts")?;
         Ok(fpath.display().to_string())
     }
-    /// Execute a shell command on the remote server.
+    /// Execute a shell command on the remote server. Fails if the remote
+    /// command exits non-zero, surfacing its captured stderr/stdout so the
+    /// caller can diagnose what went wrong (`Command::status()` reports the
+    /// exit code as `Ok(_)`, so the previous Stdio::null() + `?` shape was
+    /// silently swallowing remote-side failures).
     fn run_ssh_cmd(&self, cmd: Vec<&str>) -> Result<()> {
         tracing::trace!("Entering run_ssh_cmd");
         let ssh_kp = &self.ssh_client_keypair.write_locally(&self.name)?;
         let ssh_kp_s = ssh_kp.display().to_string();
         let known_hosts_opt = format!("UserKnownHostsFile={}", &self.known_hosts()?);
         let ipv4_address = &self.server.ipv4_address()?.to_string();
+        let pretty_cmd = cmd.join(" ");
         let mut cmd_args = vec![
             "-l",
             "innisfree",
@@ -200,12 +226,27 @@ impl TunnelManager {
             ipv4_address,
         ];
         cmd_args.extend(cmd);
-        std::process::Command::new("ssh")
+        let output = std::process::Command::new("ssh")
             .args(cmd_args)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .context("ssh command failed")?;
+            .output()
+            .context("invoking ssh")?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !output.status.success() {
+            bail!(
+                "remote command `{pretty_cmd}` failed (ssh exit {}):\n\
+                 --- stderr ---\n{}\n--- stdout ---\n{}",
+                output.status,
+                stderr.trim_end(),
+                stdout.trim_end(),
+            );
+        }
+        if !stdout.trim().is_empty() {
+            tracing::debug!("remote `{pretty_cmd}` stdout:\n{}", stdout.trim_end());
+        }
+        if !stderr.trim().is_empty() {
+            tracing::debug!("remote `{pretty_cmd}` stderr:\n{}", stderr.trim_end());
+        }
         Ok(())
     }
     /// Destroys all infrastructure, including local Wireguard interfaces,
@@ -215,22 +256,46 @@ impl TunnelManager {
         // Drop the runtime: boringtun's DeviceHandle::Drop tears down
         // the TUN device and joins worker threads.
         self.local_wg = None;
-        let _ = self.server.destroy().await;
-        clean_config_dir(&self.name)?;
-        Ok(())
+
+        // Run both cleanup steps regardless of which fails: a leaked droplet
+        // costs money, but local config is also worth removing. Capture each
+        // result, log loudly on a destroy failure (so the user knows manual
+        // cleanup is needed), then propagate.
+        let destroy_result = self
+            .server
+            .destroy()
+            .await
+            .context("destroying remote server");
+        if let Err(e) = &destroy_result {
+            tracing::error!(
+                "failed to destroy remote server (manual cleanup may be required): {e:#}"
+            );
+        }
+        let config_result = clean_config_dir(&self.name).context("removing local config dir");
+
+        destroy_result?;
+        config_result
     }
 }
 
-/// Look up IPv4 address for remote server. Accepts a service name,
-/// so that `innisfree ip` on the CLI can return an answer by inspecting
-/// the on-disk config for an instance running in a separate process.
-// TODO: store ip in config file locally
+/// Look up the IPv4 address for the remote server. The marker file is
+/// written by [`TunnelManager::write_ready_marker`] only after the tunnel
+/// is verified up, so a successful return from this function doubles as
+/// "the tunnel is ready" — callers polling for readiness don't need a
+/// separate signal.
 pub fn get_server_ip(service_name: &str) -> Result<IpAddr> {
-    tracing::trace!("Looking up server IP from known_hosts file");
-    let fpath = make_config_dir(service_name)?.join("known_hosts");
-    let known_hosts = std::fs::read_to_string(&fpath)?;
-    let host_parts: Vec<&str> = known_hosts.split(' ').collect();
-    let ip: IpAddr = host_parts[0].to_string().parse()?;
+    tracing::trace!("Looking up server IP from ready marker");
+    let fpath = make_config_dir(service_name)?.join("ip");
+    let content = std::fs::read_to_string(&fpath).with_context(|| {
+        format!(
+            "reading {} (tunnel may not be ready yet)",
+            fpath.display()
+        )
+    })?;
+    let ip: IpAddr = content
+        .trim()
+        .parse()
+        .with_context(|| format!("parsing IP from {}", fpath.display()))?;
     Ok(ip)
 }
 
