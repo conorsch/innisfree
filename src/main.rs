@@ -120,8 +120,7 @@ async fn main() -> Result<()> {
             floating_ip,
         } => {
             // Ensure DigitalOcean API token is defined; fail fast if not.
-            env::var("DIGITALOCEAN_API_TOKEN")
-                .context("DIGITALOCEAN_API_TOKEN env var not set")?;
+            env::var("DIGITALOCEAN_API_TOKEN").context("DIGITALOCEAN_API_TOKEN env var not set")?;
             let services = config::ServicePort::from_str_multi(&ports)?;
             tracing::info!("Will provide proxies for {:?}", services);
             let name = clean_name(&name);

@@ -138,8 +138,7 @@ impl InnisfreeServer for Droplet {
         ssh_server_keypair: &SshKeypair,
     ) -> Result<Self> {
         tracing::debug!("Creating new DigitalOcean Droplet");
-        let mut cc =
-            CloudConfig::new(ssh_client_keypair, ssh_server_keypair, &wg_mgr, &services)?;
+        let mut cc = CloudConfig::new(ssh_client_keypair, ssh_server_keypair, &wg_mgr, &services)?;
         // Look up the SSH pubkeys associated with the cloud account, and
         // authorize them on the new host so operators can manage it as they
         // manage other machines.

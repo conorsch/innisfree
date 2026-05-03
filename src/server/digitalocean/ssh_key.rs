@@ -16,11 +16,6 @@ const DO_API_BASE_URL: &str = "https://api.digitalocean.com/v2";
 pub struct DigitalOceanSshKey {
     /// Public key material, in ED25519 format, for the SSH keypair.
     pub public_key: String,
-    /// Human-readable name for identifying the public key in the API console.
-    pub name: String,
-    /// Created automatically by DigitalOcean API, as a hash of the public key,
-    /// to identify the public key uniquely.
-    pub fingerprint: String,
     /// Numeric ID, created automatically by the DigitalOcean API, for this
     /// specific key. The ID can be used during Droplet creation requests
     /// to ensure a public key is present.

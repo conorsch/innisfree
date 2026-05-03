@@ -47,12 +47,7 @@ fn binary_is_statically_linked() {
 /// tree with a `result` symlink.
 fn nix_build_innisfree() -> PathBuf {
     let output = Command::new("nix")
-        .args([
-            "build",
-            ".#innisfree",
-            "--no-link",
-            "--print-out-paths",
-        ])
+        .args(["build", ".#innisfree", "--no-link", "--print-out-paths"])
         .output()
         .expect("failed to invoke `nix build`; ensure nix is on PATH");
 
@@ -62,7 +57,9 @@ fn nix_build_innisfree() -> PathBuf {
         String::from_utf8_lossy(&output.stderr),
     );
 
-    let store_path = String::from_utf8(output.stdout)
-        .expect("`nix build` output is not valid UTF-8");
-    PathBuf::from(store_path.trim()).join("bin").join("innisfree")
+    let store_path =
+        String::from_utf8(output.stdout).expect("`nix build` output is not valid UTF-8");
+    PathBuf::from(store_path.trim())
+        .join("bin")
+        .join("innisfree")
 }

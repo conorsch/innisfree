@@ -30,8 +30,6 @@ pub struct TunnelManager {
     pub ssh_client_keypair: SshKeypair,
     /// SSH keypair for identifying remote SSH server identity.
     pub ssh_server_keypair: SshKeypair,
-    /// Static IP to be attached to the server, for stable DNS entries on recreation.
-    pub static_ip: Option<IpAddr>,
     /// Live local Wireguard interface, populated by [`Self::up`].
     /// Dropping it tears the interface down.
     local_wg: Option<LocalWg>,
@@ -69,7 +67,6 @@ impl TunnelManager {
             server: Box::new(server),
             ssh_client_keypair,
             ssh_server_keypair,
-            static_ip,
             wg,
             local_wg: None,
         })
@@ -286,12 +283,8 @@ impl TunnelManager {
 pub fn get_server_ip(service_name: &str) -> Result<IpAddr> {
     tracing::trace!("Looking up server IP from ready marker");
     let fpath = make_config_dir(service_name)?.join("ip");
-    let content = std::fs::read_to_string(&fpath).with_context(|| {
-        format!(
-            "reading {} (tunnel may not be ready yet)",
-            fpath.display()
-        )
-    })?;
+    let content = std::fs::read_to_string(&fpath)
+        .with_context(|| format!("reading {} (tunnel may not be ready yet)", fpath.display()))?;
     let ip: IpAddr = content
         .trim()
         .parse()
