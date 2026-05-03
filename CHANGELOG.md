@@ -1,5 +1,13 @@
 # Innisfree changelog
 
+## 0.4.0
+
+* feat: use boringtun for userspace wireguard
+* fix: update debian-11 -> debian-13
+* refactor: stronger typing throughout server structs
+* test: rewrite integration tests in rust
+* lint: address all cargo clippy warnings
+
 ## 0.3.1
 * dev: add nix flake for devshell
 * build: statically linked binary via nix
