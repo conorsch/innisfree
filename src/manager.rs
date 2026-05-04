@@ -4,41 +4,73 @@
 use crate::config::{clean_config_dir, make_config_dir, ServicePort};
 
 use crate::proxy::proxy_handler;
-use crate::server::digitalocean::server::Droplet;
-use crate::server::InnisfreeServer;
+use crate::server::{InnisfreeServer, Provider, ServerSpec};
 use crate::ssh::SshKeypair;
 use crate::wg::{LocalWg, WireguardManager};
 use anyhow::{anyhow, bail, Context, Result};
 use futures::future::join_all;
-use std::net::{IpAddr, SocketAddr, TcpStream};
+use std::net::{IpAddr, SocketAddr};
+use std::time::Duration;
+use tokio::net::TcpStream;
 use tokio::signal;
 
 /// Controller class for handling tunnel configurations.
 /// Handles the soup-to-nuts configuration, including server creation,
 /// WireGuard device config, and proxy.
+///
+/// Fields are `pub(crate)` so the layout can change freely without
+/// breaking external callers — reach in via the inherent accessors
+/// ([`Self::server_ipv4`], [`Self::local_wg_address`], [`Self::services`])
+/// instead.
 pub struct TunnelManager {
     /// List of `ServicePort`s to manage connections for.
-    pub services: Vec<ServicePort>,
-    // dest_ip: IpAddr,
+    pub(crate) services: Vec<ServicePort>,
     /// Remote server handling public ingress.
-    pub server: Box<dyn InnisfreeServer>,
+    pub(crate) server: Box<dyn InnisfreeServer>,
     /// Human-readable name for this service manager.
-    pub name: String,
+    pub(crate) name: String,
     /// Controller for Wireguard tunnels.
-    pub wg: WireguardManager,
+    pub(crate) wg: WireguardManager,
     /// SSH keypair for managing client-side SSH connections.
-    pub ssh_client_keypair: SshKeypair,
+    pub(crate) ssh_client_keypair: SshKeypair,
     /// SSH keypair for identifying remote SSH server identity.
-    pub ssh_server_keypair: SshKeypair,
+    pub(crate) ssh_server_keypair: SshKeypair,
     /// Live local Wireguard interface, populated by [`Self::up`].
     /// Dropping it tears the interface down.
     local_wg: Option<LocalWg>,
 }
 
 impl TunnelManager {
+    /// Public IPv4 address of the remote cloud server. Errors if the
+    /// underlying provider has no public v4 network on the server (in
+    /// practice: not yet booted). Named explicitly `_ipv4` to mirror
+    /// [`InnisfreeServer::ipv4_address`] — IPv6 will arrive as a sibling
+    /// method, not as a generalization of this one.
+    pub fn server_ipv4(&self) -> Result<IpAddr> {
+        self.server.ipv4_address()
+    }
+
+    /// Address of the local Wireguard interface — what local services
+    /// must bind to in order to receive forwarded traffic.
+    pub fn local_wg_address(&self) -> IpAddr {
+        self.wg.local_device.interface.address
+    }
+
+    /// Service ports being proxied through this tunnel.
+    pub fn services(&self) -> &[ServicePort] {
+        &self.services
+    }
+}
+
+impl TunnelManager {
     /// Create a new controller for managing a collection of services.
     /// Call `up()` to build.
+    ///
+    /// `provider` decides which cloud backend creates the server; its
+    /// concrete type is opaque here so adding a second provider doesn't
+    /// touch this function.
     pub async fn new(
+        provider: Box<dyn Provider>,
         tunnel_name: &str,
         services: Vec<ServicePort>,
         static_ip: Option<IpAddr>,
@@ -48,14 +80,14 @@ impl TunnelManager {
         // Create new ephemeral ssh keypair
         let ssh_client_keypair = SshKeypair::new("client")?;
         let ssh_server_keypair = SshKeypair::new("server")?;
-        let server = Droplet::new(
-            tunnel_name,
-            services.clone(),
-            wg.clone(),
-            &ssh_client_keypair,
-            &ssh_server_keypair,
-        )
-        .await?;
+        let spec = ServerSpec {
+            name: tunnel_name.to_string(),
+            services: services.clone(),
+            wg_mgr: wg.clone(),
+            ssh_client_keypair: ssh_client_keypair.clone(),
+            ssh_server_keypair: ssh_server_keypair.clone(),
+        };
+        let server = provider.create(&spec).await?;
 
         if let Some(ip) = static_ip {
             server.assign_floating_ip(ip).await?;
@@ -64,7 +96,7 @@ impl TunnelManager {
         Ok(TunnelManager {
             name: tunnel_name.to_owned(),
             services,
-            server: Box::new(server),
+            server,
             ssh_client_keypair,
             ssh_server_keypair,
             wg,
@@ -75,32 +107,33 @@ impl TunnelManager {
     /// configures it to forward public ports over its Wireguard interface,
     /// to a local Wireguard interface
     pub async fn up(&mut self) -> Result<()> {
-        self.wait_for_ssh()?;
+        self.wait_for_ssh().await?;
         tracing::debug!("Configuring remote proxy...");
         self.wait_for_cloudinit()
+            .await
             .context("failed while waiting for cloudinit")?;
         let ip = self.server.ipv4_address()?;
         tracing::debug!("Configuring tunnel...");
         // Stamp the freshly-discovered remote IP onto the local
         // device's peer config so the boringtun runtime can connect.
-        self.wg.wg_local_device.peer.endpoint = Some(ip);
+        self.wg.local_device.peer.endpoint = Some(ip);
         // Persist the rendered wg0.conf for debugging / SSH inspection;
         // the local runtime no longer reads it, but it remains useful.
         self.wg
-            .wg_local_device
+            .local_device
             .write_locally(&self.name, &self.services)
             .context("failed to write wireguard configs")?;
         tracing::debug!("Bringing up remote Wireguard interface");
         self.bring_up_remote_wg()
+            .await
             .context("failed to bring up remote wg interface")?;
         tracing::debug!("Bringing up local Wireguard interface");
-        let local_wg = LocalWg::start(&self.wg.wg_local_device)
+        let local_wg = LocalWg::start(&self.wg.local_device)
             .await
             .context("failed to bring up local wg interface")?;
         self.local_wg = Some(local_wg);
 
-        tracing::trace!("Testing connection");
-        self.test_connection()?;
+        self.test_connection().await?;
         // The `ip` marker is the readiness signal for `innisfree ip` (and
         // anything polling it, like the integration test). Writing it here
         // — only after `test_connection` confirms the wg tunnel pings end
@@ -124,28 +157,27 @@ impl TunnelManager {
         Ok(())
     }
     /// Blocks until the server's cloudinit process reports completion.
-    fn wait_for_cloudinit(&self) -> Result<()> {
+    async fn wait_for_cloudinit(&self) -> Result<()> {
         let cmd: Vec<&str> = vec!["cloud-init", "status", "--long", "--wait"];
-        self.run_ssh_cmd(cmd)
+        self.run_ssh_cmd(cmd).await
     }
-    /// Blocks until 22/TCP is available on the server.
-    fn wait_for_ssh(&self) -> Result<()> {
+    /// Blocks until 22/TCP is available on the server. Each connect is
+    /// wrapped in a 5 s timeout so an unreachable host doesn't pin the
+    /// loop on the kernel's much longer default connect timeout.
+    async fn wait_for_ssh(&self) -> Result<()> {
         let dest_ip = SocketAddr::new(self.server.ipv4_address()?, 22);
         loop {
-            let stream = TcpStream::connect(dest_ip);
-            match stream {
-                Ok(_) => {
+            match tokio::time::timeout(Duration::from_secs(5), TcpStream::connect(dest_ip)).await {
+                Ok(Ok(_)) => {
                     tracing::debug!("SSH port is open, proceeding");
-                    break;
+                    return Ok(());
                 }
-                Err(_) => {
+                Ok(Err(_)) | Err(_) => {
                     tracing::debug!("Waiting for ssh...");
-                    tracing::trace!("Polling socket {})...", dest_ip);
-                    std::thread::sleep(std::time::Duration::from_secs(10));
+                    tokio::time::sleep(Duration::from_secs(10)).await;
                 }
             }
         }
-        Ok(())
     }
     /// Wait for an interrupt signal, then terminate gracefully,
     /// cleaning up droplet resources before exit.
@@ -165,17 +197,16 @@ impl TunnelManager {
     }
     /// Ping remote remote Wireguard IP from local Wireguard device.
     /// Ensures connectivity is established between remote and local interfaces.
-    fn test_connection(&self) -> Result<()> {
-        tracing::trace!("Inside test connection, setting up vars");
-        let ip = &self.wg.wg_remote_ip;
-        tracing::trace!("Inside test connection, running ping cmd");
-        std::process::Command::new("ping")
+    async fn test_connection(&self) -> Result<()> {
+        let ip = self.wg.remote_device.interface.address;
+        tokio::process::Command::new("ping")
             .arg("-c1")
             .arg("-w5")
             .arg(ip.to_string())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
+            .await
             .context("Failed to ping remote Wireguard interface, tunnel broken")?;
         tracing::debug!("Confirmed tunnel is established, able to ping across it");
         Ok(())
@@ -183,10 +214,10 @@ impl TunnelManager {
     /// Runs `wg-quick up` on remote server to bring up its Wireguard interface.
     /// Remote node is still Debian + cloud-init + wg-quick (Phase 2 will
     /// migrate it to NixOS); local side now uses the in-process runtime.
-    fn bring_up_remote_wg(&self) -> Result<()> {
+    async fn bring_up_remote_wg(&self) -> Result<()> {
         let cmd = vec!["wg-quick", "up", "/tmp/innisfree.conf"];
         tracing::trace!("Activating remote wg interface");
-        self.run_ssh_cmd(cmd)
+        self.run_ssh_cmd(cmd).await
     }
     /// Generates an SSH known_hosts file, containing the automatically
     /// generated SSH hostkey for the remote server. Doing so allows
@@ -204,8 +235,7 @@ impl TunnelManager {
     /// caller can diagnose what went wrong (`Command::status()` reports the
     /// exit code as `Ok(_)`, so the previous Stdio::null() + `?` shape was
     /// silently swallowing remote-side failures).
-    fn run_ssh_cmd(&self, cmd: Vec<&str>) -> Result<()> {
-        tracing::trace!("Entering run_ssh_cmd");
+    async fn run_ssh_cmd(&self, cmd: Vec<&str>) -> Result<()> {
         let ssh_kp = &self.ssh_client_keypair.write_locally(&self.name)?;
         let ssh_kp_s = ssh_kp.display().to_string();
         let known_hosts_opt = format!("UserKnownHostsFile={}", &self.known_hosts()?);
@@ -223,9 +253,10 @@ impl TunnelManager {
             ipv4_address,
         ];
         cmd_args.extend(cmd);
-        let output = std::process::Command::new("ssh")
+        let output = tokio::process::Command::new("ssh")
             .args(cmd_args)
             .output()
+            .await
             .context("invoking ssh")?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -293,7 +324,7 @@ pub fn get_server_ip(service_name: &str) -> Result<IpAddr> {
 }
 
 /// Create an interface SSH session on remote server.
-pub fn open_shell(service_name: &str) -> Result<()> {
+pub async fn open_shell(service_name: &str) -> Result<()> {
     let client_key = make_config_dir(service_name)?.join("client_id_ed25519");
     let client_key_s = client_key.display().to_string();
     let known_hosts = make_config_dir(service_name)?.join("known_hosts");
@@ -310,9 +341,10 @@ pub fn open_shell(service_name: &str) -> Result<()> {
         "ConnectTimeout=5",
         &ipv4_address,
     ];
-    std::process::Command::new("ssh")
+    tokio::process::Command::new("ssh")
         .args(cmd_args)
         .status()
+        .await
         .context("SSH interactive session failed")?;
     Ok(())
 }

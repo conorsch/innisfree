@@ -1,8 +1,11 @@
-//! Abstract representation of remote server.
-//! Designed to be modular in terms of providers, but really
-//! only supports DigitalOcean. The abstract struct
-//! is [InnisfreeServer], but underneath it assumes implementation
-//! as a DigitalOcean Droplet.
+//! Abstract representation of a remote server, plus the [`Provider`]
+//! factory that knows how to bring one up.
+//!
+//! Today only DigitalOcean is implemented (see
+//! [`crate::server::digitalocean::provider::DigitalOceanProvider`]),
+//! but the trait shapes are deliberately minimal so a second backend
+//! (Hetzner, Linode, …) only needs a new [`Provider`] impl plus a CLI
+//! flag to select it.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -15,23 +18,43 @@ use crate::wg::WireguardManager;
 pub mod cloudinit;
 pub mod digitalocean;
 
-/// Manager class, wraps a cloudserver VM type, such as Droplet,
-/// to make it a bit easier to work with. Bootstraps the necessary keypairs
-/// for services like SSH (both client and keyserver need keypairs), and Wireguard.
-#[async_trait]
-pub trait InnisfreeServer {
-    /// Create new [InnisfreeServer]. Requires a name for the service,
-    /// a list of `ServicePort`s, and a [WireguardManager].
-    async fn new(
-        name: &str,
-        services: Vec<ServicePort>,
-        wg_mgr: WireguardManager,
-        ssh_client_keypair: &SshKeypair,
-        ssh_server_keypair: &SshKeypair,
-    ) -> Result<Self>
-    where
-        Self: Sized;
+/// The provider-agnostic recipe for "stand up a server for this tunnel."
+///
+/// Owned data so the eventual [`Provider::create`] future can be `'static`
+/// without macro lifetime gymnastics; clones here are cheap (two
+/// short Strings inside each [`SshKeypair`], the wg manager is a few
+/// IPs and keypairs).
+pub struct ServerSpec {
+    /// Hostname / DO droplet name; usually the cleaned tunnel name.
+    pub name: String,
+    /// Service ports to publish on the remote ingress.
+    pub services: Vec<ServicePort>,
+    /// Wireguard manager, used by the provider to render the remote
+    /// `wg0.conf` and the cloud-init.
+    pub wg_mgr: WireguardManager,
+    /// SSH keypair the operator (and innisfree itself) will log in with.
+    pub ssh_client_keypair: SshKeypair,
+    /// SSH keypair the remote sshd identifies itself with — pinned in
+    /// the operator's `known_hosts` to defeat first-use MITM.
+    pub ssh_server_keypair: SshKeypair,
+}
 
+/// Factory for building cloud servers. Implementations encapsulate
+/// provider-specific credentials and API plumbing (e.g. a held
+/// [`crate::server::digitalocean::client::DoClient`]).
+#[async_trait]
+pub trait Provider: Send + Sync {
+    /// Bring up a new server matching `spec`, blocking until it is
+    /// network-reachable. Returns a type-erased handle so callers can
+    /// remain provider-agnostic.
+    async fn create(&self, spec: &ServerSpec) -> Result<Box<dyn InnisfreeServer>>;
+}
+
+/// Handle to a running cloud server. Construction goes through
+/// [`Provider::create`] — this trait only describes the operations a
+/// caller can perform on an already-live server.
+#[async_trait]
+pub trait InnisfreeServer: Send + Sync {
     /// Returns the IPv4 address for the remote server. Used for both
     /// SSH connections and the remote Wireguard peer interface.
     fn ipv4_address(&self) -> Result<IpAddr>;

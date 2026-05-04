@@ -13,7 +13,7 @@ use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// Representation of an ED25519 SSH keypair.
 pub struct SshKeypair {
     /// A human-readable prefix to distinguish it with a unique

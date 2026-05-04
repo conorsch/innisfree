@@ -1,12 +1,10 @@
 //! Logic to assign a pre-existing Floating IP resource in DigitalOcean
 //! to the Droplet used for managing the tunnel. Allows for DNS records
 //! to remain unchanged, but the tunnel to be rebuilt ad-hoc.
-use anyhow::{Context, Result};
-use serde_json::json;
-use std::env;
+use anyhow::Result;
 use std::net::IpAddr;
 
-const DO_API_BASE_URL: &str = "https://api.digitalocean.com/v2/floating_ips";
+use crate::server::digitalocean::client::DoClient;
 
 /// Represents a DigitalOcean Reserved IP (FKA Floating IP).
 /// In order to use a Floating IP with DigitalOcean, first create it out of band,
@@ -24,25 +22,8 @@ pub struct FloatingIp {
 impl FloatingIp {
     /// Attaches the Floating IP to the Droplet specified by [FloatingIp::droplet_id].
     /// Requires that the Floating IP already exists.
-    pub async fn assign(&self) -> Result<()> {
-        let api_key =
-            env::var("DIGITALOCEAN_API_TOKEN").context("DIGITALOCEAN_API_TOKEN not set.")?;
-        let req_body = json!({
-            "type": "assign",
-            "droplet_id": self.droplet_id,
-        });
-        let request_url = DO_API_BASE_URL.to_owned() + "/" + &self.ip.to_string() + "/actions";
-
-        let client = reqwest::Client::new();
-        client
-            .post(request_url)
-            .json(&req_body)
-            .bearer_auth(api_key)
-            .send()
-            .await
-            .context("Network error, check connection")?;
-
+    pub async fn assign(&self, client: &DoClient) -> Result<()> {
         tracing::debug!("Assigning floating IP to droplet...");
-        Ok(())
+        client.assign_floating_ip(self.ip, self.droplet_id).await
     }
 }

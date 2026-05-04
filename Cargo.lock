@@ -1078,7 +1078,6 @@ dependencies = [
  "home",
  "ipnet",
  "libc",
- "log",
  "pnet",
  "rand",
  "rand_core",

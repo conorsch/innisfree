@@ -142,20 +142,15 @@ impl WireguardDevice {
 /// Controller class for creating both ends of a Wireguard tunnel.
 /// Generates keypairs for local and remote interfaces.
 /// Generates configuration files for both interfaces.
+///
+/// IPs and names live on the embedded [`WireguardDevice`]s — they used
+/// to be duplicated as flat fields here, which made it possible for the
+/// two copies to diverge.
 pub struct WireguardManager {
-    /// IP address of the local Wireguard interface.
-    pub wg_local_ip: IpAddr,
-    // wg_local_name: String,
-    // wg_local_host: WireguardHost,
     /// Wireguard configuration for local interface.
-    pub wg_local_device: WireguardDevice,
-
-    /// IP address of the remote Wireguard interface.
-    pub wg_remote_ip: IpAddr,
-    // wg_remote_name: String,
-    // wg_remote_host: WireguardHost,
+    pub local_device: WireguardDevice,
     /// Wireguard configuration for remote interface.
-    pub wg_remote_device: WireguardDevice,
+    pub remote_device: WireguardDevice,
 }
 
 impl WireguardManager {
@@ -164,55 +159,41 @@ impl WireguardManager {
         let wg_subnet = generate_unused_subnet()?;
         let s = wg_subnet.hosts().collect::<Vec<IpAddr>>();
 
-        let wg_local_ip = s[0];
         // Decouple the kernel-visible interface name from `service_name`:
         // user-provided names + the `innisfree-` / `-local` adornments would
         // routinely overflow Linux's IFNAMSIZ (15). Pick a short, fixed-shape
         // name (`innisfree<N>`) where N is the smallest integer not already
         // taken by an existing interface. Service identity stays in
         // `service_name` and the per-tunnel config dir.
-        let wg_local_name = pick_local_iface_name()?;
-        let wg_local_keypair = WireguardKeypair::new()?;
-        let wg_local_host = WireguardHost {
-            name: wg_local_name.to_owned(),
-            address: wg_local_ip,
+        let local_name = pick_local_iface_name()?;
+        let local_host = WireguardHost {
+            name: local_name.clone(),
+            address: s[0],
             endpoint: None,
             listenport: 0,
-            keypair: wg_local_keypair,
+            keypair: WireguardKeypair::new()?,
         };
 
-        let wg_remote_ip = s[1];
-        let wg_remote_name = format!("innisfree-{}-remote", service_name);
-        let wg_remote_keypair = WireguardKeypair::new()?;
-        let wg_remote_host = WireguardHost {
-            name: wg_remote_name.to_owned(),
-            address: wg_remote_ip,
+        let remote_name = format!("innisfree-{}-remote", service_name);
+        let remote_host = WireguardHost {
+            name: remote_name.clone(),
+            address: s[1],
             endpoint: None,
             listenport: WIREGUARD_LISTEN_PORT,
-            keypair: wg_remote_keypair,
-        };
-
-        let wg_local_device = WireguardDevice {
-            name: wg_local_name,
-            interface: wg_local_host.clone(),
-            peer: wg_remote_host.clone(),
-        };
-        let wg_remote_device = WireguardDevice {
-            name: wg_remote_name,
-            interface: wg_remote_host,
-            peer: wg_local_host,
+            keypair: WireguardKeypair::new()?,
         };
 
         Ok(WireguardManager {
-            wg_local_ip,
-            // wg_local_name,
-            // wg_local_host,
-            wg_local_device,
-
-            wg_remote_ip,
-            // wg_remote_name,
-            // wg_remote_host,
-            wg_remote_device,
+            local_device: WireguardDevice {
+                name: local_name,
+                interface: local_host.clone(),
+                peer: remote_host.clone(),
+            },
+            remote_device: WireguardDevice {
+                name: remote_name,
+                interface: remote_host,
+                peer: local_host,
+            },
         })
     }
 }
@@ -385,9 +366,9 @@ mod tests {
         // IP addrs are available on the system.
         let mgr = WireguardManager::new("foo-service")?;
         let local_ip: IpAddr = "10.50.0.1".parse()?;
-        assert!(mgr.wg_local_ip == local_ip);
+        assert_eq!(mgr.local_device.interface.address, local_ip);
         let remote_ip: IpAddr = "10.50.0.2".parse()?;
-        assert!(mgr.wg_remote_ip == remote_ip);
+        assert_eq!(mgr.remote_device.interface.address, remote_ip);
         Ok(())
     }
 }

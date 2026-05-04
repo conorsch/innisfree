@@ -29,7 +29,6 @@ clap = { version = "4", features = ["env", "derive", "cargo"] }
 futures = "0.3"
 home = "~0.5"
 ipnet = "~2"
-log = "~0.4"
 ssh-key = { version = "0.6", features = ["ed25519"] }
 pnet = "~0.28"
 rand = "~0.8"
@@ -40,7 +39,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.8"
 tera = "1"
-tokio = { version = "1.27", features = [ "io-util", "macros", "net", "rt-multi-thread", "signal"] }
+tokio = { version = "1.27", features = [ "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "ansi"] }
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
@@ -50,11 +49,6 @@ x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 # to send SIGINT to `innisfree up` so it can gracefully destroy the cloud
 # droplet during integration-test teardown.
 libc = "0.2"
-# Add `process` + `time` to the tokio feature set used at test build time:
-# the integration test orchestrates `innisfree up` as a child process and
-# polls/retries with deadlines. Cargo unions these with the runtime feature
-# list above.
-tokio = { version = "1.27", features = ["process", "time"] }
 
 [package.metadata.deb]
 maintainer-scripts = "debian/"

@@ -80,7 +80,7 @@ impl CloudConfig {
         );
         let wg = CloudConfigFile {
             // Use the template without firewall rules
-            content: wg_mgr.wg_remote_device.config()?,
+            content: wg_mgr.remote_device.config()?,
             owner: String::from("root:root"),
             permissions: String::from("0644"),
             path: String::from("/tmp/innisfree.conf"),
@@ -88,7 +88,7 @@ impl CloudConfig {
         };
         cc.write_files.push(wg);
         let nginx = CloudConfigFile {
-            content: nginx_streams(services, wg_mgr.wg_local_device.interface.address)?,
+            content: nginx_streams(services, wg_mgr.local_device.interface.address)?,
             owner: String::from("root:root"),
             permissions: String::from("0644"),
             path: String::from("/etc/nginx/conf.d/stream/innisfree.conf"),

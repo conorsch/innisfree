@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Result};
-use clap::{crate_version, Parser, Subcommand};
+use clap::{crate_version, ArgAction, Parser, Subcommand};
 use config::clean_name;
 use std::env;
 use std::net::IpAddr;
@@ -16,6 +16,10 @@ mod server;
 mod ssh;
 mod wg;
 
+use crate::server::digitalocean::client::DoClient;
+use crate::server::digitalocean::provider::DigitalOceanProvider;
+use crate::server::Provider;
+
 #[derive(Debug, Parser)]
 #[clap(
     name = "innisfree",
@@ -23,6 +27,11 @@ mod wg;
     version = crate_version!(),
 )]
 struct Args {
+    /// Increase log verbosity. `-v` enables debug, `-vv` enables trace.
+    /// Ignored if `RUST_LOG` is set in the environment.
+    #[clap(short, long, global = true, action = ArgAction::Count)]
+    verbose: u8,
+
     /// Create new innisfree tunnel
     #[clap(subcommand)]
     cmd: RootCommand,
@@ -64,6 +73,11 @@ enum RootCommand {
         /// Title for the service, used for cloud node and systemd service
         #[clap(default_value = "innisfree", env = "INNISFREE_NAME", long, short)]
         name: String,
+
+        /// Emit `{"ip": "..."}` instead of a bare address, for piping
+        /// into other CLI tools.
+        #[clap(long)]
+        json: bool,
     },
 
     /// Run checks to evaluate platform support
@@ -97,10 +111,20 @@ enum RootCommand {
 /// local services that should be exposed remotely.
 /// Pass `--help` for information.
 async fn main() -> Result<()> {
-    // Set up logging via tracing-subscriber.
-    let filter_layer = EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("info"))?;
+    let args = Args::parse();
+
+    // Set up logging via tracing-subscriber. `RUST_LOG` always wins so
+    // operators can override per-module filters; otherwise `-v` / `-vv`
+    // pick the level. All output goes to stderr so subcommands like
+    // `innisfree ip` can keep stdout clean for piping.
+    let filter_layer = match (env::var("RUST_LOG"), args.verbose) {
+        (Ok(_), _) => EnvFilter::from_default_env(),
+        (Err(_), 0) => EnvFilter::new("info"),
+        (Err(_), 1) => EnvFilter::new("debug"),
+        (Err(_), _) => EnvFilter::new("trace"),
+    };
     let fmt_layer = tracing_subscriber::fmt::layer()
-        // .with_ansi(atty::is(atty::Stream::Stdout))
+        .with_writer(std::io::stderr)
         .with_ansi(true)
         .with_target(true);
 
@@ -108,8 +132,6 @@ async fn main() -> Result<()> {
         .with(filter_layer)
         .with(fmt_layer)
         .init();
-
-    let args = Args::parse();
 
     // Primary subcommand. Soup to nuts experience.
     match args.cmd {
@@ -119,15 +141,18 @@ async fn main() -> Result<()> {
             dest_ip,
             floating_ip,
         } => {
-            // Ensure DigitalOcean API token is defined; fail fast if not.
-            env::var("DIGITALOCEAN_API_TOKEN").context("DIGITALOCEAN_API_TOKEN env var not set")?;
+            // Construct the DO client up front (reads DIGITALOCEAN_API_TOKEN
+            // exactly once) and wrap it in the provider trait object so the
+            // rest of the code path stays backend-agnostic.
+            let provider: Box<dyn Provider> =
+                Box::new(DigitalOceanProvider::new(DoClient::from_env()?));
             let services = config::ServicePort::from_str_multi(&ports)?;
             tracing::info!("Will provide proxies for {:?}", services);
             let name = clean_name(&name);
 
             tracing::info!("Creating server '{}'", &name);
             let mut mgr: manager::TunnelManager =
-                manager::TunnelManager::new(&name, services, floating_ip).await?;
+                manager::TunnelManager::new(provider, &name, services, floating_ip).await?;
             tracing::info!("Configuring server");
             match mgr.up().await {
                 Ok(_) => {
@@ -145,33 +170,32 @@ async fn main() -> Result<()> {
                     std::process::exit(2);
                 }
             }
-            // Really need a better default case for floating-ip
-            match floating_ip {
-                Some(_f) => {
-                    tracing::debug!("Configuring floating IP...");
-                    unimplemented!("Floating IP support disabled due to trait refactor.");
-                    // mgr.assign_floating_ip(f).await?;
-                    // tracing::info!("Server ready! IPv4 address: {}", f);
-                }
-                None => {
-                    let ip = &mgr.server.ipv4_address()?;
-                    tracing::info!("Server ready! IPv4 address: {}", ip);
-                }
-            }
+            // The floating-IP attachment itself happens inside
+            // TunnelManager::new (via InnisfreeServer::assign_floating_ip);
+            // here we just report whichever address users will actually hit.
+            let ready_ip = match floating_ip {
+                Some(f) => f,
+                None => mgr.server_ipv4()?,
+            };
+            tracing::info!("Server ready! IPv4 address: {}", ready_ip);
             if name == "innisfree" {
                 tracing::debug!("Try logging in with 'innisfree ssh'");
             } else {
                 tracing::debug!("Try logging in with 'innisfree ssh -n {}'", name);
             }
-            let local_ip: IpAddr = mgr.wg.wg_local_device.interface.address;
+            let local_ip = mgr.local_wg_address();
             if &dest_ip.to_string() != "127.0.0.1" {
-                tokio::spawn(manager::run_proxy(local_ip, dest_ip, mgr.services.clone()));
+                tokio::spawn(manager::run_proxy(
+                    local_ip,
+                    dest_ip,
+                    mgr.services().to_vec(),
+                ));
                 mgr.block().await?;
             } else {
                 tracing::info!(
                     "Ready to listen on {}. Start local services. Make sure to bind to {}, rather than 127.0.0.1!",
                     ports,
-                    mgr.wg.wg_local_ip,
+                    local_ip,
                 );
                 tracing::debug!(
                     "Blocking forever. Press ctrl+c to tear down the tunnel and destroy server."
@@ -182,17 +206,21 @@ async fn main() -> Result<()> {
         }
         RootCommand::Ssh { name } => {
             let name = clean_name(&name);
-            manager::open_shell(&name).context(
+            manager::open_shell(&name).await.context(
                 "Server not found. Try running 'innisfree up' first, or pass --name=<service>",
             )?;
         }
 
-        RootCommand::Ip { name } => {
+        RootCommand::Ip { name, json } => {
             let name = clean_name(&name);
             let ip = manager::get_server_ip(&name).context(
                 "Server not found. Try running 'innisfree up' first, or pass --name=<service>.",
             )?;
-            println!("{}", ip);
+            if json {
+                println!("{}", serde_json::json!({ "ip": ip.to_string() }));
+            } else {
+                println!("{}", ip);
+            }
         }
         RootCommand::Doctor {} => {
             tracing::info!("Running doctor, to determine platform support...");
@@ -220,7 +248,7 @@ async fn main() -> Result<()> {
             tracing::info!("Starting proxy for services {:?}", ports);
             manager::run_proxy(local_ip, dest_ip, ports)
                 .await
-                .map_err(|e| anyhow!(format!("Proxy failed: {}", e)))?;
+                .map_err(|e| anyhow!("Proxy failed: {}", e))?;
         }
     }
     Ok(())

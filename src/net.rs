@@ -55,10 +55,7 @@ pub fn generate_unused_subnet() -> Result<IpNet> {
             return Ok(subnet);
         }
     }
-    Err(anyhow!(format!(
-        "No available subnets within {}",
-        parent_net
-    )))
+    Err(anyhow!("No available subnets within {}", parent_net))
 }
 
 #[cfg(test)]
