@@ -164,9 +164,15 @@ async fn main() -> Result<()> {
                     // underlying cause (was masking real LocalWg::start
                     // errors during integration tests).
                     tracing::error!("Failed bringing up tunnel: {:#}", e);
-                    // Error probably unrecoverable
+                    // Error probably unrecoverable. Best-effort cleanup
+                    // — log a clean-up failure loudly but never let it
+                    // mask the original tunnel error.
                     tracing::warn!("Attempting to exit gracefully...");
-                    mgr.clean().await?;
+                    if let Err(clean_err) = mgr.clean().await {
+                        tracing::error!(
+                            "cleanup also failed (manual cleanup may be required): {clean_err:#}"
+                        );
+                    }
                     std::process::exit(2);
                 }
             }

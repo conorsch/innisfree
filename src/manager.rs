@@ -179,21 +179,20 @@ impl TunnelManager {
             }
         }
     }
-    /// Wait for an interrupt signal, then terminate gracefully,
-    /// cleaning up droplet resources before exit.
+    /// Wait for an interrupt signal, then tear the tunnel down. Returns
+    /// `Ok(())` once cleanup completes; the caller decides what to do
+    /// next (typically: drop out of `main` and let the process exit).
+    /// Returns `Err` if signal registration fails or cleanup fails — no
+    /// `process::exit` from inside this function, so callers stay in
+    /// control of exit codes.
     pub async fn block(&mut self) -> Result<()> {
-        match signal::ctrl_c().await {
-            Ok(()) => {
-                tracing::warn!("Received stop signal, exiting gracefully");
-                self.clean().await?;
-                tracing::info!("Clean up complete, exiting");
-                std::process::exit(0);
-            }
-            Err(e) => {
-                tracing::error!("Unable to register hook for ctrl+c: {}", e);
-                std::process::exit(10);
-            }
-        }
+        signal::ctrl_c()
+            .await
+            .context("registering ctrl+c handler")?;
+        tracing::warn!("Received stop signal, exiting gracefully");
+        self.clean().await?;
+        tracing::info!("Clean up complete");
+        Ok(())
     }
     /// Ping remote remote Wireguard IP from local Wireguard device.
     /// Ensures connectivity is established between remote and local interfaces.
@@ -236,25 +235,14 @@ impl TunnelManager {
     /// exit code as `Ok(_)`, so the previous Stdio::null() + `?` shape was
     /// silently swallowing remote-side failures).
     async fn run_ssh_cmd(&self, cmd: Vec<&str>) -> Result<()> {
-        let ssh_kp = &self.ssh_client_keypair.write_locally(&self.name)?;
-        let ssh_kp_s = ssh_kp.display().to_string();
-        let known_hosts_opt = format!("UserKnownHostsFile={}", &self.known_hosts()?);
-        let ipv4_address = &self.server.ipv4_address()?.to_string();
+        let key_path = self.ssh_client_keypair.write_locally(&self.name)?;
+        let known_hosts = self.known_hosts()?;
+        let ip = self.server.ipv4_address()?.to_string();
         let pretty_cmd = cmd.join(" ");
-        let mut cmd_args = vec![
-            "-l",
-            "innisfree",
-            "-i",
-            &ssh_kp_s,
-            "-o",
-            &known_hosts_opt,
-            "-o",
-            "ConnectTimeout=5",
-            ipv4_address,
-        ];
-        cmd_args.extend(cmd);
+        let mut cmd_args = ssh_base_args(&key_path.display().to_string(), &known_hosts, &ip);
+        cmd_args.extend(cmd.iter().map(|s| (*s).to_string()));
         let output = tokio::process::Command::new("ssh")
-            .args(cmd_args)
+            .args(&cmd_args)
             .output()
             .await
             .context("invoking ssh")?;
@@ -325,28 +313,34 @@ pub fn get_server_ip(service_name: &str) -> Result<IpAddr> {
 
 /// Create an interface SSH session on remote server.
 pub async fn open_shell(service_name: &str) -> Result<()> {
-    let client_key = make_config_dir(service_name)?.join("client_id_ed25519");
-    let client_key_s = client_key.display().to_string();
-    let known_hosts = make_config_dir(service_name)?.join("known_hosts");
-    let known_hosts_opt = format!("UserKnownHostsFile={}", known_hosts.display());
-    let ipv4_address = get_server_ip(service_name)?.to_string();
-    let cmd_args = vec![
-        "-l",
-        "innisfree",
-        "-i",
-        &client_key_s,
-        "-o",
-        &known_hosts_opt,
-        "-o",
-        "ConnectTimeout=5",
-        &ipv4_address,
-    ];
+    let dir = make_config_dir(service_name)?;
+    let key_path = dir.join("client_id_ed25519").display().to_string();
+    let known_hosts = dir.join("known_hosts").display().to_string();
+    let ip = get_server_ip(service_name)?.to_string();
+    let cmd_args = ssh_base_args(&key_path, &known_hosts, &ip);
     tokio::process::Command::new("ssh")
-        .args(cmd_args)
+        .args(&cmd_args)
         .status()
         .await
         .context("SSH interactive session failed")?;
     Ok(())
+}
+
+/// Build the canonical `ssh -l innisfree -i <key> -o UserKnownHostsFile=<known_hosts>
+/// -o ConnectTimeout=5 <ip>` arg vector. Append a remote command after to run it
+/// non-interactively, or pass to `Command::status()` as-is for an interactive shell.
+fn ssh_base_args(key_path: &str, known_hosts_path: &str, ip: &str) -> Vec<String> {
+    vec![
+        "-l".into(),
+        "innisfree".into(),
+        "-i".into(),
+        key_path.into(),
+        "-o".into(),
+        format!("UserKnownHostsFile={known_hosts_path}"),
+        "-o".into(),
+        "ConnectTimeout=5".into(),
+        ip.into(),
+    ]
 }
 
 /// Spin up local network proxy to handle passing traffic

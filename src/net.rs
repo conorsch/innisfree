@@ -1,9 +1,11 @@
 //! Utility functions for looking up available
 //! IP ranges for establishing the Wireguard interface.
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use ipnet::IpNet;
+use std::collections::HashSet;
 use std::net::IpAddr;
+
 /// Network subnet range for doling out IP addresses for the Innisfree tunnels.
 /// Each instance of innisfree, regardless of the number of [crate::config::ServicePort]s
 /// in play, requires a `/30` subnet, that is, two (2) unique IP addresses.
@@ -12,46 +14,30 @@ use std::net::IpAddr;
 /// or something else entirely.
 pub const INNISFREE_SUBNET: &str = "10.50.0.1/28";
 
-/// Checks whether IpAddr exists on local system, whether
-/// it is bound to a local device. If not, assumed to be available.
-fn address_in_use(ip: IpAddr) -> bool {
-    let mut in_use = false;
-    for iface in pnet::datalink::interfaces() {
-        for i in iface.ips {
-            if i.ip() == ip {
-                in_use = true;
-            }
-        }
-    }
-    in_use
+/// Snapshot of every IP currently bound to a local interface. Calls
+/// `getifaddrs(3)` once via `if-addrs`, which is much cheaper than the
+/// previous "scan interfaces for each candidate IP" loop.
+fn local_addresses() -> Result<HashSet<IpAddr>> {
+    Ok(if_addrs::get_if_addrs()
+        .context("listing local network interfaces")?
+        .iter()
+        .map(|iface| iface.ip())
+        .collect())
 }
 
-/// Returns true if none of the addresses in the subnet
-/// are bound on the current system, i.e. all are available.
-fn subnet_available(n: IpNet) -> bool {
-    let mut is_available = true;
-    for h in n.hosts() {
-        if address_in_use(h) {
-            is_available = false;
-        }
-    }
-    is_available
-}
-
-/// Uses the constant INNISFREE_SUBNET `parent_subnet` defines a range in which IP addresses may be claimed.
-/// Within that range, an unused /30 will be returned if possible. Otherwise,
-/// an error is returned. The /30 setting for child subnets is hardcoded,
-/// because the WireguardManager only cares about pairs of 2 addresses, i.e. /30.
+/// Within the `INNISFREE_SUBNET` parent range, return the first `/30`
+/// whose two host addresses are both unbound on the local system.
+/// `/30` is hardcoded because [`crate::wg::WireguardManager`] only ever
+/// needs a pair of IPs (one local, one peer) per tunnel.
 pub fn generate_unused_subnet() -> Result<IpNet> {
     let parent_net: IpNet = INNISFREE_SUBNET.parse()?;
-    let subnets = parent_net.subnets(30)?.collect::<Vec<IpNet>>();
-    for subnet in subnets {
-        // Skip initial subnet, which is the entirety of the parent_net, /28.
-        // We only consider /30s.
+    let in_use = local_addresses()?;
+    for subnet in parent_net.subnets(30)? {
+        // Skip the parent itself (/28), which `subnets()` yields first.
         if subnet.hosts().count() > 2 {
             continue;
         }
-        if subnet_available(subnet) {
+        if subnet.hosts().all(|h| !in_use.contains(&h)) {
             return Ok(subnet);
         }
     }

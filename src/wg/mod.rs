@@ -97,35 +97,18 @@ pub struct WireguardDevice {
 }
 
 impl WireguardDevice {
-    /// Returns contents of an INI config file for Wireguard.
-    /// This file constitutes the entirety of the Wireguard interface configuration,
-    /// for use with `wg-quick`, and is usually referred to in Wireguard documentation
-    /// as `wg0.conf`. In our case, on disk it is usually called `innisfree.conf`.
-    /// In practice, this config file is used by the local end of the Innisfree tunnel.
-    pub fn config(&self) -> Result<String> {
-        let wg_template = include_str!("../../files/wg0.conf.j2");
-        let mut context = tera::Context::new();
-        context.insert("wireguard_device", &self);
-        // Firewall rules are mostly important from client side,
-        // so allow rules to be ignored
-        let empty_rules: Vec<ServicePort> = Vec::new();
-        context.insert("services", &empty_rules);
-        // Disable autoescaping, since it breaks wg key contents
-        tera::Tera::one_off(wg_template, &context, false)
-            .context("Failed to write wireguard config")
-    }
-
-    /// Returns a specially formed Wireguard INI config file,
-    /// that includes firewall rules restrictions for the services
-    /// being proxied.
-    pub fn config_with_services(&self, services: &[ServicePort]) -> Result<String> {
+    /// Render the INI `wg0.conf` for this device. Pass an empty slice
+    /// to omit the per-service iptables PostUp/PostDown rules — useful
+    /// for the remote end of the tunnel, where the firewall rules don't
+    /// apply, and for the wg config we hand to cloud-init.
+    pub fn config(&self, services: &[ServicePort]) -> Result<String> {
         let wg_template = include_str!("../../files/wg0.conf.j2");
         let mut context = tera::Context::new();
         context.insert("wireguard_device", &self);
         context.insert("services", &services);
         // Disable autoescaping, since it breaks wg key contents
         tera::Tera::one_off(wg_template, &context, false)
-            .context("Failed to write wireguard config for multiple services")
+            .context("Failed to render wireguard config")
     }
 
     /// Save the config file to disk, within the configuration directory for project state.
@@ -133,7 +116,7 @@ impl WireguardDevice {
     pub fn write_locally(&self, service_name: &str, services: &[ServicePort]) -> Result<()> {
         let wg_config_path = make_config_dir(service_name)?.join(format!("{}.conf", service_name));
         let mut f = std::fs::File::create(&wg_config_path)?;
-        f.write_all(self.config_with_services(services)?.as_bytes())?;
+        f.write_all(self.config(services)?.as_bytes())?;
         Ok(())
     }
 }
@@ -234,7 +217,7 @@ mod tests {
             interface: wg_hosts[0].clone(),
             peer: wg_hosts[1].clone(),
         };
-        let wg_config = wg_device.config()?;
+        let wg_config = wg_device.config(&[])?;
         assert!(wg_config.contains("Interface"));
         assert!(wg_config.contains("PrivateKey = "));
 

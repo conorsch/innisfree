@@ -80,7 +80,7 @@ impl CloudConfig {
         );
         let wg = CloudConfigFile {
             // Use the template without firewall rules
-            content: wg_mgr.remote_device.config()?,
+            content: wg_mgr.remote_device.config(&[])?,
             owner: String::from("root:root"),
             permissions: String::from("0644"),
             path: String::from("/tmp/innisfree.conf"),
@@ -141,31 +141,6 @@ fn nginx_streams(services: &[ServicePort], dest_ip: IpAddr) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wg::{WireguardHost, WireguardKeypair};
-
-    // Helper function for reusable structs
-    // This function is copied from src/wg.rs,
-    // figure out a way to reuse it safely
-    fn _generate_hosts() -> Result<Vec<WireguardHost>> {
-        let kp1 = WireguardKeypair::new()?;
-        let h1 = WireguardHost {
-            name: "foo1".to_string(),
-            address: "127.0.0.1".parse()?,
-            endpoint: Some("1.1.1.1".parse()?),
-            listenport: 80,
-            keypair: kp1,
-        };
-        let kp2 = WireguardKeypair::new()?;
-        let h2 = WireguardHost {
-            name: "foo2".to_string(),
-            address: "127.0.0.1".parse()?,
-            endpoint: None,
-            listenport: 80,
-            keypair: kp2,
-        };
-        let wg_hosts: Vec<WireguardHost> = vec![h1, h2];
-        Ok(wg_hosts)
-    }
 
     #[test]
     fn cloudconfig_has_header() -> Result<()> {
