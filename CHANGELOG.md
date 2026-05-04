@@ -1,5 +1,11 @@
 # Innisfree changelog
 
+## 0.4.1
+* dev: clearer messaging about sudo in test runner
+* refactor: add TunnelStateDir manager type
+* refactor: better error handling throughout
+* refactor: better encapsulation for wrapper types
+
 ## 0.4.0
 
 * feat: use boringtun for userspace wireguard
