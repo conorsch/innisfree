@@ -144,8 +144,8 @@ mod tests {
 
     #[test]
     fn cloudconfig_has_header() -> Result<()> {
-        let kp1 = SshKeypair::new("server-test1")?;
-        let kp2 = SshKeypair::new("server-test2")?;
+        let kp1 = SshKeypair::new()?;
+        let kp2 = SshKeypair::new()?;
         let wg_mgr = WireguardManager::new("foo-test")?;
         let ports = vec![];
         let cc = CloudConfig::new(&kp1, &kp2, &wg_mgr, &ports)?;

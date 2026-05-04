@@ -1,11 +1,11 @@
 //! High-level controller logic for managing
 //! service proxies, i.e. [TunnelManager].
 
-use crate::config::{clean_config_dir, make_config_dir, ServicePort};
-
+use crate::config::ServicePort;
 use crate::proxy::proxy_handler;
 use crate::server::{InnisfreeServer, Provider, ServerSpec};
 use crate::ssh::SshKeypair;
+use crate::state::{remove_state_for_service, TunnelStateDir};
 use crate::wg::{LocalWg, WireguardManager};
 use anyhow::{anyhow, bail, Context, Result};
 use futures::future::join_all;
@@ -27,8 +27,11 @@ pub struct TunnelManager {
     pub(crate) services: Vec<ServicePort>,
     /// Remote server handling public ingress.
     pub(crate) server: Box<dyn InnisfreeServer>,
-    /// Human-readable name for this service manager.
+    /// Human-readable name for this service manager. Retained alongside
+    /// `state` because it's also used in user-facing log messages.
     pub(crate) name: String,
+    /// On-disk per-tunnel state dir (config files, ip marker, etc.).
+    pub(crate) state: TunnelStateDir,
     /// Controller for Wireguard tunnels.
     pub(crate) wg: WireguardManager,
     /// SSH keypair for managing client-side SSH connections.
@@ -75,11 +78,15 @@ impl TunnelManager {
         services: Vec<ServicePort>,
         static_ip: Option<IpAddr>,
     ) -> Result<TunnelManager> {
-        clean_config_dir(tunnel_name)?;
+        // Wipe any stale state from a previous tunnel of the same name,
+        // then create the dir fresh. Order matters — `for_service` is
+        // create-or-open, so without the wipe we'd inherit old keypairs.
+        remove_state_for_service(tunnel_name)?;
+        let state = TunnelStateDir::for_service(tunnel_name)?;
         let wg = WireguardManager::new(tunnel_name)?;
         // Create new ephemeral ssh keypair
-        let ssh_client_keypair = SshKeypair::new("client")?;
-        let ssh_server_keypair = SshKeypair::new("server")?;
+        let ssh_client_keypair = SshKeypair::new()?;
+        let ssh_server_keypair = SshKeypair::new()?;
         let spec = ServerSpec {
             name: tunnel_name.to_string(),
             services: services.clone(),
@@ -99,6 +106,7 @@ impl TunnelManager {
             server,
             ssh_client_keypair,
             ssh_server_keypair,
+            state,
             wg,
             local_wg: None,
         })
@@ -121,7 +129,7 @@ impl TunnelManager {
         // the local runtime no longer reads it, but it remains useful.
         self.wg
             .local_device
-            .write_locally(&self.name, &self.services)
+            .write_to(&self.state.wg_conf(), &self.services)
             .context("failed to write wireguard configs")?;
         tracing::debug!("Bringing up remote Wireguard interface");
         self.bring_up_remote_wg()
@@ -146,12 +154,12 @@ impl TunnelManager {
     }
 
     /// Persist the public IPv4 address of the cloud node to a small file
-    /// in the per-tunnel config dir. Used by [`get_server_ip`] (and thus
+    /// in the per-tunnel state dir. Used by [`get_server_ip`] (and thus
     /// `innisfree ip` / `innisfree ssh`) as both the IP source and the
     /// readiness signal.
     fn write_ready_marker(&self) -> Result<()> {
         let ip = self.server.ipv4_address()?;
-        let fpath = make_config_dir(&self.name)?.join("ip");
+        let fpath = self.state.ip_marker();
         std::fs::write(&fpath, format!("{ip}\n"))
             .with_context(|| format!("writing ready marker {}", fpath.display()))?;
         Ok(())
@@ -225,7 +233,7 @@ impl TunnelManager {
         let ipv4_address = &self.server.ipv4_address()?;
         let server_host_key = &self.ssh_server_keypair.public;
         let host_line = format!("{} {}", ipv4_address, server_host_key);
-        let fpath = make_config_dir(&self.name)?.join("known_hosts");
+        let fpath = self.state.known_hosts();
         std::fs::write(&fpath, host_line).context("Failed to create known_hosts")?;
         Ok(fpath.display().to_string())
     }
@@ -235,7 +243,8 @@ impl TunnelManager {
     /// exit code as `Ok(_)`, so the previous Stdio::null() + `?` shape was
     /// silently swallowing remote-side failures).
     async fn run_ssh_cmd(&self, cmd: Vec<&str>) -> Result<()> {
-        let key_path = self.ssh_client_keypair.write_locally(&self.name)?;
+        let key_path = self.state.client_key();
+        self.ssh_client_keypair.write_to(&key_path)?;
         let known_hosts = self.known_hosts()?;
         let ip = self.server.ipv4_address()?.to_string();
         let pretty_cmd = cmd.join(" ");
@@ -287,7 +296,8 @@ impl TunnelManager {
                 "failed to destroy remote server (manual cleanup may be required): {e:#}"
             );
         }
-        let config_result = clean_config_dir(&self.name).context("removing local config dir");
+        let config_result =
+            remove_state_for_service(&self.name).context("removing local state dir");
 
         destroy_result?;
         config_result
@@ -301,7 +311,8 @@ impl TunnelManager {
 /// separate signal.
 pub fn get_server_ip(service_name: &str) -> Result<IpAddr> {
     tracing::trace!("Looking up server IP from ready marker");
-    let fpath = make_config_dir(service_name)?.join("ip");
+    let state = TunnelStateDir::open(service_name)?;
+    let fpath = state.ip_marker();
     let content = std::fs::read_to_string(&fpath)
         .with_context(|| format!("reading {} (tunnel may not be ready yet)", fpath.display()))?;
     let ip: IpAddr = content
@@ -313,9 +324,9 @@ pub fn get_server_ip(service_name: &str) -> Result<IpAddr> {
 
 /// Create an interface SSH session on remote server.
 pub async fn open_shell(service_name: &str) -> Result<()> {
-    let dir = make_config_dir(service_name)?;
-    let key_path = dir.join("client_id_ed25519").display().to_string();
-    let known_hosts = dir.join("known_hosts").display().to_string();
+    let state = TunnelStateDir::open(service_name)?;
+    let key_path = state.client_key().display().to_string();
+    let known_hosts = state.known_hosts().display().to_string();
     let ip = get_server_ip(service_name)?.to_string();
     let cmd_args = ssh_base_args(&key_path, &known_hosts, &ip);
     tokio::process::Command::new("ssh")

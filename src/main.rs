@@ -14,6 +14,7 @@ mod net;
 mod proxy;
 mod server;
 mod ssh;
+mod state;
 mod wg;
 
 use crate::server::digitalocean::client::DoClient;
@@ -234,9 +235,9 @@ async fn main() -> Result<()> {
             tracing::info!("Platform support looks good! Ready to rock.");
         }
         RootCommand::Clean { name } => {
-            tracing::info!("Cleaning config directory");
+            tracing::info!("Cleaning state directory");
             let name = clean_name(&name);
-            config::clean_config_dir(&name)?;
+            state::remove_state_for_service(&name)?;
         }
 
         RootCommand::Proxy { ports, dest_ip } => {

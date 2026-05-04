@@ -16,4 +16,5 @@ pub mod net;
 pub mod proxy;
 pub mod server;
 pub mod ssh;
+pub mod state;
 pub mod wg;

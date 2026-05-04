@@ -8,7 +8,7 @@ use std::io::Write as _;
 use std::net::IpAddr;
 use std::path::Path;
 
-use crate::config::{make_config_dir, ServicePort};
+use crate::config::ServicePort;
 use crate::net::generate_unused_subnet;
 use serde::Serialize;
 use x25519_dalek::{PublicKey, StaticSecret};
@@ -111,11 +111,13 @@ impl WireguardDevice {
             .context("Failed to render wireguard config")
     }
 
-    /// Save the config file to disk, within the configuration directory for project state.
-    /// This method is only appropriate for the local end of the Innisfree tunnel.
-    pub fn write_locally(&self, service_name: &str, services: &[ServicePort]) -> Result<()> {
-        let wg_config_path = make_config_dir(service_name)?.join(format!("{}.conf", service_name));
-        let mut f = std::fs::File::create(&wg_config_path)?;
+    /// Render the wg config and write it to `path`. Intended for the
+    /// local end of the tunnel — the remote end's config travels via
+    /// cloud-init. Caller (typically [`crate::state::TunnelStateDir::wg_conf`])
+    /// owns the path.
+    pub fn write_to(&self, path: &Path, services: &[ServicePort]) -> Result<()> {
+        let mut f = std::fs::File::create(path)
+            .with_context(|| format!("creating wg config at {}", path.display()))?;
         f.write_all(self.config(services)?.as_bytes())?;
         Ok(())
     }

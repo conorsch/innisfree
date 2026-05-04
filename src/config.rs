@@ -5,7 +5,6 @@ use anyhow::{anyhow, Result};
 
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
-use std::path::PathBuf;
 use std::str::FromStr;
 
 // Define public exports
@@ -99,28 +98,6 @@ impl TryFrom<&str> for ServicePort {
             protocol,
         })
     }
-}
-
-/// Create local config dir, e.g. ~/.config/innisfree/,
-/// for storing state of active tunnels.
-pub fn make_config_dir(service_name: &str) -> Result<PathBuf> {
-    let config_dir = home::home_dir()
-        .ok_or(anyhow::anyhow!("could not find home directory"))?
-        .join(".config")
-        .join("innisfree")
-        .join(service_name);
-    std::fs::create_dir_all(&config_dir)?;
-    Ok(config_dir)
-}
-
-/// Remove config dir and all contents.
-/// Will render active tunnels unconfigurable,
-/// and subject to manual cleanup.
-pub fn clean_config_dir(service_name: &str) -> Result<()> {
-    let config_dir = make_config_dir(service_name)?;
-    tracing::debug!("Removing config dir: {}", config_dir.display());
-    std::fs::remove_dir_all(config_dir)?;
-    Ok(())
 }
 
 /// Provides a human-readable name for the service.
