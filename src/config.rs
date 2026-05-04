@@ -1,15 +1,40 @@
 //! Storage logic, to persist configuration of remote tunnels locally.
 //! Includes methods for creating and destroying configuration directories.
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 // Define public exports
 const DEFAULT_PORT: i32 = 80;
 const DEFAULT_LOCAL_PORT: i32 = 80;
+
+/// Transport protocol for a forwarded service. The serialized form is
+/// `"TCP"` / `"UDP"` so the existing Tera templates that compare
+/// `s.protocol == "TCP"` continue to work without edits.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum Protocol {
+    /// Transmission Control Protocol.
+    #[default]
+    Tcp,
+    /// User Datagram Protocol.
+    Udp,
+}
+
+impl FromStr for Protocol {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self> {
+        match s.trim().to_ascii_uppercase().as_str() {
+            "TCP" => Ok(Protocol::Tcp),
+            "UDP" => Ok(Protocol::Udp),
+            other => Err(anyhow!("unknown protocol {other:?}, expected TCP or UDP")),
+        }
+    }
+}
 
 /// Describes a socket expectation for a given service.
 /// The port will be reused to listen locally and forward remotely.
@@ -22,17 +47,14 @@ pub struct ServicePort {
     /// Port number for the local service, to which traffic is forwarded.
     pub local_port: i32,
     /// Protocol, one of TCP or UDP.
-    pub protocol: String,
+    pub protocol: Protocol,
 }
 
 impl ServicePort {
     /// Parse a comma-separated string of ServicePort specs,
     /// e.g. `8080/TCP,4444/UDP`.
     pub fn from_str_multi(port_spec: &str) -> Result<Vec<ServicePort>> {
-        Ok(port_spec
-            .split(',')
-            .flat_map(ServicePort::try_from)
-            .collect())
+        port_spec.split(',').map(ServicePort::try_from).collect()
     }
 }
 
@@ -41,7 +63,7 @@ impl Default for ServicePort {
         ServicePort {
             port: DEFAULT_PORT,
             local_port: DEFAULT_LOCAL_PORT,
-            protocol: "TCP".to_string(),
+            protocol: Protocol::default(),
         }
     }
 }
@@ -60,24 +82,22 @@ impl TryFrom<&str> for ServicePort {
     /// In the format `8888:9999`, `8888` remote port on the public ingress,
     /// and `9999` is the local port of the service to forward traffic to.
     fn try_from(port_spec: &str) -> Result<Self> {
-        let mut sp = ServicePort::default();
-        // Handle optional protocol spec
-        let port_and_proto_spec: Vec<String> =
-            port_spec.split('/').map(|x| x.to_string()).collect();
-        sp.protocol = match port_and_proto_spec.get(1) {
-            Some(p) => p.to_string(),
-            None => String::from("TCP"),
+        let (port_part, protocol) = match port_spec.split_once('/') {
+            Some((ports, proto)) => (ports, proto.parse()?),
+            None => (port_spec, Protocol::default()),
         };
-
-        // Handle port spec, with optional local/remote distinction
-        let port_spec = &port_and_proto_spec[0];
-        let port_spec_parts: Vec<String> = port_spec.split(':').map(|x| x.to_string()).collect();
-        sp.port = port_spec_parts[0].parse()?;
-        sp.local_port = match port_spec_parts.get(1) {
-            Some(p) => p.parse()?,
-            None => sp.port,
+        let (port, local_port) = match port_part.split_once(':') {
+            Some((remote, local)) => (remote.parse()?, local.parse()?),
+            None => {
+                let p: i32 = port_part.parse()?;
+                (p, p)
+            }
         };
-        Ok(sp)
+        Ok(ServicePort {
+            port,
+            local_port,
+            protocol,
+        })
     }
 }
 
@@ -124,22 +144,22 @@ mod tests {
     #[test]
     fn service_port_manual_creation() {
         let s = ServicePort::default();
-        assert!(s.port == 80);
-        assert!(s.protocol == "TCP");
+        assert_eq!(s.port, 80);
+        assert_eq!(s.protocol, Protocol::Tcp);
     }
 
     #[test]
     fn parse_web_ports() -> Result<()> {
         let port_spec = "80/TCP,443/TCP";
         let services = ServicePort::from_str_multi(port_spec)?;
-        assert!(services.len() == 2);
+        assert_eq!(services.len(), 2);
         let s1 = &services[0];
-        assert!(s1.port == 80);
-        assert!(s1.protocol == "TCP");
+        assert_eq!(s1.port, 80);
+        assert_eq!(s1.protocol, Protocol::Tcp);
 
         let s2 = &services[1];
-        assert!(s2.port == 443);
-        assert!(s2.protocol == "TCP");
+        assert_eq!(s2.port, 443);
+        assert_eq!(s2.protocol, Protocol::Tcp);
         Ok(())
     }
 
@@ -147,25 +167,59 @@ mod tests {
     fn parse_different_ports() -> Result<()> {
         let port_spec = "80:30080/TCP";
         let s = ServicePort::try_from(port_spec)?;
-        assert!(s.port == 80);
-        assert!(s.local_port == 30080);
-        assert!(s.protocol == "TCP");
+        assert_eq!(s.port, 80);
+        assert_eq!(s.local_port, 30080);
+        assert_eq!(s.protocol, Protocol::Tcp);
         Ok(())
     }
     #[test]
     fn parse_different_ports_multi() -> Result<()> {
         let port_spec = "80:30080,443:30443";
         let services = ServicePort::from_str_multi(port_spec)?;
-        assert!(services.len() == 2);
+        assert_eq!(services.len(), 2);
         let s1 = &services[0];
-        assert!(s1.port == 80);
-        assert!(s1.local_port == 30080);
-        assert!(s1.protocol == "TCP");
+        assert_eq!(s1.port, 80);
+        assert_eq!(s1.local_port, 30080);
+        assert_eq!(s1.protocol, Protocol::Tcp);
 
         let s2 = &services[1];
-        assert!(s2.port == 443);
-        assert!(s2.local_port == 30443);
-        assert!(s2.protocol == "TCP");
+        assert_eq!(s2.port, 443);
+        assert_eq!(s2.local_port, 30443);
+        assert_eq!(s2.protocol, Protocol::Tcp);
+        Ok(())
+    }
+
+    #[test]
+    fn from_str_multi_propagates_parse_errors() {
+        // Previous `flat_map` shape silently dropped the bad spec; assert we
+        // now surface the failure instead of returning a partial vec.
+        let err = ServicePort::from_str_multi("80/TCP,not-a-port").unwrap_err();
+        assert!(
+            err.to_string().contains("invalid digit") || err.to_string().contains("not-a-port"),
+            "expected a parse error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_protocol_is_case_insensitive() -> Result<()> {
+        assert_eq!("tcp".parse::<Protocol>()?, Protocol::Tcp);
+        assert_eq!("Udp".parse::<Protocol>()?, Protocol::Udp);
+        assert!("sctp".parse::<Protocol>().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn protocol_serializes_as_uppercase() -> Result<()> {
+        // Tera templates compare against the literal strings "TCP" / "UDP";
+        // lock that wire format in so a future serde rename can't quietly
+        // break the rendered nginx and wg configs.
+        let s = ServicePort {
+            port: 80,
+            local_port: 80,
+            protocol: Protocol::Udp,
+        };
+        let j = serde_json::to_string(&s)?;
+        assert!(j.contains("\"protocol\":\"UDP\""), "got: {j}");
         Ok(())
     }
     #[test]

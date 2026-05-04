@@ -4,9 +4,8 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use reqwest;
 use serde;
 use serde_json;
@@ -34,6 +33,58 @@ pub const DO_SIZE: &str = "s-1vcpu-1gb";
 pub const DO_IMAGE: &str = "debian-13-x64";
 const DO_API_BASE_URL: &str = "https://api.digitalocean.com/v2/droplets";
 
+/// Lifecycle state of a Droplet, as reported by the DigitalOcean API.
+///
+/// Known values come from the API reference; an unknown variant is preserved
+/// via `#[serde(other)]` so a future state added by DO doesn't fail
+/// deserialization mid-poll.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DropletStatus {
+    /// Just created; networking info has not yet been assigned.
+    New,
+    /// Booted and reachable; networking info is populated.
+    Active,
+    /// Powered off.
+    Off,
+    /// Archived (long-term off); networking info is no longer reserved.
+    Archive,
+    /// Any state DO adds in the future that this binary doesn't recognize.
+    #[serde(other)]
+    Unknown,
+}
+
+/// One IP-address-bearing entry inside a Droplet's `networks.{v4,v6}` array.
+///
+/// We deserialize only the two fields we consume; serde ignores the rest
+/// (`netmask`, `gateway`), which is helpful because their JSON shape differs
+/// between v4 (string) and v6 (number).
+#[derive(Debug, Deserialize)]
+struct Network {
+    ip_address: IpAddr,
+    #[serde(rename = "type")]
+    kind: NetworkKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum NetworkKind {
+    Public,
+    Private,
+}
+
+/// Typed shape of the DO API's `droplet.networks` object. Replaces the
+/// previous `HashMap<String, Vec<HashMap<String, String>>>` so callers no
+/// longer have to index into stringly-typed maps to find the public IP.
+///
+/// We only project `v4` because nothing in this codebase consumes IPv6 yet;
+/// add a `v6` field here when that changes.
+#[derive(Debug, Deserialize, Default)]
+struct Networks {
+    #[serde(default)]
+    v4: Vec<Network>,
+}
+
 /// Representation of a DigitalOcean Droplet, i.e. cloud VM.
 /// See more documentation at
 /// <https://docs.digitalocean.com/reference/api/api-reference/#tag/Droplets>.
@@ -43,13 +94,15 @@ pub struct Droplet {
     pub id: u32,
     // Human-readable name for Droplet, also its hostname.
     // name: String,
-    /// Current state of server. Is `new` when booting, changes
-    /// to `active` once host is booted and networking info is populated.
-    pub status: String,
+    /// Current state of server. Is [`DropletStatus::New`] when booting,
+    /// changes to [`DropletStatus::Active`] once host is booted and
+    /// networking info is populated.
+    pub status: DropletStatus,
     /// Information about host networking, such as public and private
-    /// interfaces and their corresponding IPv4/6 addresses. Use [Droplet::ipv4_address]
-    /// to obtain an IP address easily.
-    networks: HashMap<String, Vec<HashMap<String, String>>>,
+    /// interfaces and their corresponding IPv4/6 addresses. Use
+    /// [Droplet::ipv4_address] to obtain an IP address easily.
+    #[serde(default)]
+    networks: Networks,
     // The API takes a list, but we only care about 1 key,
     // the generated one, so use that.
     /// Optional dynamically generated SSH keypair, stored in cloud,
@@ -107,18 +160,15 @@ impl Default for DropletConfig {
 impl Droplet {
     /// Block until a droplet is running. Upon creation, the API will
     /// return a result where `status="new"`. This method blocks until
-    /// the API reports `state="running"`.
+    /// the API reports `status="active"`, at which point networking info
+    /// is populated.
     async fn wait_for_boot(&self) -> Result<Droplet> {
-        // The JSON response for droplet creation won't include info like
-        // public IPv4 address, because that hasn't been assigned yet. The 'status'
-        // field will show as "new", so wait until it's "active", then network info
-        // will be populated. Might be a good use of enums here.
         loop {
             thread::sleep(time::Duration::from_secs(10));
             let droplet = get_droplet(self)
                 .await
                 .context("polling droplet boot status")?;
-            if droplet.status == "active" {
+            if droplet.status == DropletStatus::Active {
                 return Ok(droplet);
             }
             tracing::info!("Server still booting, waiting...");
@@ -184,17 +234,16 @@ impl InnisfreeServer for Droplet {
         droplet.wait_for_boot().await
     }
 
-    /// Retrieves the public IPv4 address for the Droplet.
-    /// Technically can fail, if results are missing from the API response.
+    /// Retrieves the public IPv4 address for the Droplet. Returns an error
+    /// if the API response contains no public v4 network — typically because
+    /// the droplet hasn't finished booting yet (see [`Droplet::wait_for_boot`]).
     fn ipv4_address(&self) -> Result<IpAddr> {
-        let mut s = String::new();
-        for v4_network in &self.networks["v4"] {
-            if v4_network["type"] == "public" {
-                s = v4_network["ip_address"].clone();
-                break;
-            }
-        }
-        Ok(s.parse()?)
+        self.networks
+            .v4
+            .iter()
+            .find(|n| n.kind == NetworkKind::Public)
+            .map(|n| n.ip_address)
+            .ok_or_else(|| anyhow!("droplet {} has no public IPv4 network", self.id))
     }
 
     async fn assign_floating_ip(&self, floating_ip: IpAddr) -> Result<()> {
